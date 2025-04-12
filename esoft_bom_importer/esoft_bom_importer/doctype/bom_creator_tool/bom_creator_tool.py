@@ -143,6 +143,19 @@ def create_bom_creator_from_json(bom_json):
 
             ensure_item_exists(item_code, item_name, item_desc)
 
+            if child.get("operation"):
+                operations = child.get("operation").split("+")
+                for op in operations:
+                    op = op.strip()  # Clean up any extra spaces
+                    if not frappe.db.exists("Operation", op):
+                        operation_doc = {
+                            "doctype": "Operation",
+                            "name": op,
+                            "description": op,
+                        }
+                        frappe.get_doc(operation_doc).insert(ignore_permissions=True)
+                        frappe.db.commit()
+
             child_item = {
                 "doctype": "BOM Creator Item",
                 "item_code": item_code,
