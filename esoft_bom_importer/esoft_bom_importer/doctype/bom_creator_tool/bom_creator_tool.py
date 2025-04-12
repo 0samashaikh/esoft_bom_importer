@@ -8,18 +8,20 @@ from frappe.model.document import Document
 from rq.job import Job
 from frappe.utils.background_jobs import get_redis_conn
 
-
 class BOMCreatorTool(Document):
     def process_file(self):
         if not self.excel_file:
             frappe.throw("Please upload a file first.")
-        bom_data = give_json(self.excel_file)
-        created_docs = []
-        for bom_json in bom_data:
-            docname = create_bom_creator_from_json(bom_json)
-            if docname:
-                created_docs.append(docname)
-        return {"created_docs": created_docs}
+
+        bom_data = parse_excel_to_json(self.excel_file)
+        created_documents = []
+
+        for bom_structure in bom_data:
+            new_docname = create_bom_from_json(bom_structure)
+            if new_docname:
+                created_documents.append(new_docname)
+
+        return {"created_docs": created_documents}
 
 @frappe.whitelist()
 def process_file(docname):
@@ -27,48 +29,44 @@ def process_file(docname):
     return doc.process_file()
 
 @frappe.whitelist(allow_guest=True)
-def give_json(file_url=None):
-    if not file_url:
-        frappe.throw("File URL is required.")
-
-    # Retrieve the file document
-    file_doc = frappe.get_doc("File", {"file_url": file_url})
+def parse_excel_to_json(file_path):
+    file_doc = frappe.get_doc("File", {"file_url": file_path})
     file_path = file_doc.get_full_path()
-
-    # Determine file extension
     _, file_extension = os.path.splitext(file_path)
     file_extension = file_extension.lower()
 
-    # Read the file based on its extension
-    try:
-        if file_extension == '.xlsx':
-            df = pd.read_excel(file_path, engine='openpyxl', dtype=str).fillna('')
-        elif file_extension == '.csv':
-            df = pd.read_csv(file_path, dtype=str).fillna('')
-        else:
-            frappe.throw(f"Unsupported file extension: {file_extension}")
-    except Exception as e:
-        frappe.throw(f"Error reading file: {str(e)}")
+    if file_extension == '.xlsx':
+        df = pd.read_excel(file_path, engine='openpyxl', dtype=str).fillna('')
+    elif file_extension == '.csv':
+        df = pd.read_csv(file_path, dtype=str).fillna('')
+    else:
+        frappe.throw(f"Unsupported file extension: {file_extension}")
 
-    # List to store node dictionaries
+    df = df.applymap(lambda x: str(x).strip() if isinstance(x, str) else x)
+
     nodes = []
+    node_map = {}
+    root_nodes = []
 
-    # Convert each row into a node dictionary
     for idx, row in df.iterrows():
-        item_id = row['Sub-Assembly'].strip() if row['Sub-Assembly'].strip() else row['SR NO'].strip()
+        sub_assembly = row.get('Sub-Assembly', '').strip()
+        sr_no = row.get('SR NO', '').strip()
+        parent = row.get('Parent', '').strip()
+
+        item_id = sub_assembly or sr_no
         if not item_id:
             continue
 
         node = {
             'uid': idx,
             'item': item_id,
-            'rev': str(row.get('REV', '')).strip(),
+            'rev': row.get('REV', '').strip(),
             'description': row.get('PART DESCRIPTION', '').strip(),
-            'parent_item': row.get('Parent', '').strip(),
+            'parent_item': parent,
             'matl': row.get('MATL', '').strip(),
             'operation': row.get('operation', '').strip(),
             'den': row.get('Den', '').strip(),
-            'qty_per_set': str(row.get('QTY/ SET', 1)),  # Convert to float
+            'qty_per_set': row.get('QTY/ SET', '1').strip(),
             'length': row.get('L', '').strip(),
             'width': row.get('W', '').strip(),
             'thickness': row.get('T', '').strip(),
@@ -76,138 +74,120 @@ def give_json(file_url=None):
             'area_sq_ft': row.get('AREA SQ.FT.', '').strip(),
             'children': []
         }
-        nodes.append(node)
 
-    # Build the tree structure
-    root_nodes = []
-    node_map = {node['item']: node for node in nodes}  # Create lookup map
-    
-    for node in nodes:
-        parent_item = node['parent_item']
-        if parent_item and parent_item in node_map:
-            parent_node = node_map[parent_item]
-            parent_node['children'].append(node)
-        elif not parent_item:
+        node_map[item_id] = node
+
+        if not parent:
             root_nodes.append(node)
-
-    # Clean up nodes - preserve all technical fields
-    preserved_fields = [
-        'item', 'rev', 'description', 'matl', 'operation',
-        'den', 'qty_per_set', 'length', 'width', 'thickness',
-        'bl_weight', 'area_sq_ft', 'children'
-    ]
-
-    def cleanup(node):
-        keys = list(node.keys())
-        for key in keys:
-            if key not in preserved_fields:
-                node.pop(key, None)
-        for child in node['children']:
-            cleanup(child)
-
-    for root in root_nodes:
-        cleanup(root)
+        else:
+            parent_node = node_map.get(parent)
+            if parent_node:
+                parent_node['children'].append(node)
+            else:
+                root_nodes.append(node)
 
     return root_nodes
 
-def create_bom_creator_from_json(bom_json):
+def create_bom_from_json(bom_json):
     if not bom_json:
         return
-    
-    # Check if BOM Creator already exists
-    top_item = bom_json.get("item") or bom_json.get("description")
-    if frappe.db.exists("BOM Creator", {"item_code": top_item}):
-        frappe.logger().info(f"BOM Creator for item {top_item} already exists. Skipping...")
+
+    item_code = bom_json.get("item")
+    description = bom_json.get("description") or item_code
+
+    if frappe.db.exists("BOM Creator", {"item_code": item_code}):
+        frappe.logger().info(f"BOM Creator for item {item_code} already exists. Skipping...")
         return None
 
-    def ensure_item_exists(item_code, item_name=None, description=None, item_group="Demo Item Group"):
+    def ensure_item(item_code, name=None, description=None):
         if not frappe.db.exists("Item", item_code):
             item_doc = {
                 "doctype": "Item",
                 "item_code": item_code,
-                "item_name": item_code or item_name,
+                "item_name": name or item_code,
                 "description": description or item_code,
-                "item_group": item_group,
+                "item_group": "Demo Item Group",
                 "stock_uom": "Nos",
                 "is_stock_item": 0
             }
             frappe.get_doc(item_doc).insert(ignore_permissions=True)
             frappe.db.commit()
 
-    top_item = bom_json.get("item") or bom_json.get("description")
-    top_item_name = bom_json.get("description") or top_item
-    description = bom_json.get("description") or top_item
-
-    ensure_item_exists(top_item, top_item_name, description)
+    ensure_item(item_code, item_code, description)
 
     items = []
 
-    def process_children(children, parent_row_no=None, parent_item_code=None):
-        for child in children:
-            item_code = child.get("item") or child.get("description")
-            item_name = child.get("description") or item_code
-            item_desc = child.get("description") or item_name
+    def add_items(node, parent_item_code, parent_idx=None):
+        item_code = node['item']
+        description = node.get('description', item_code)
+        ensure_item(item_code, item_code, description)
+        if node.get("operation"):
+            operations = node.get("operation").split("+")
+            for op in operations:
+                op = op.strip()  # Clean up any extra spaces
+                if not frappe.db.exists("Operation", op):
+                    operation_doc = {
+                        "doctype": "Operation",
+                        "name": op,
+                        "description": op,
+                    }
+                    frappe.get_doc(operation_doc).insert(ignore_permissions=True)
+                    frappe.db.commit()
+        item_entry = {
+            "doctype": "BOM Creator Item",
+            "item_code": item_code,
+            "item_name": item_code,
+            "description": description,
+            "qty": str(node.get('qty_per_set', 1)),
+            "rate": 0,
+            "uom": "Nos",
+            "is_expandable": 1 if node.get('children') else 0,
+            "sourced_by_supplier": 0,
+            "bom_created": 0,
+            "allow_alternative_item": 1,
+            "do_not_explode": 1,
+            "stock_qty": str(node.get('qty_per_set', 1)),
+            "conversion_factor": 1,
+            "stock_uom": "Nos",
+            "amount": 0,
+            "base_rate": 0,
+            "base_amount": 0,
+            "fg_item": parent_item_code,
+            "parent_row_no": str(parent_idx) if parent_idx is not None else None,
+        }
 
-            ensure_item_exists(item_code, item_name, item_desc)
+        items.append(item_entry)
+        current_idx = len(items)  # 1-based index
 
-            if child.get("operation"):
-                operations = child.get("operation").split("+")
-                for op in operations:
-                    op = op.strip()  # Clean up any extra spaces
-                    if not frappe.db.exists("Operation", op):
-                        operation_doc = {
-                            "doctype": "Operation",
-                            "name": op,
-                            "description": op,
-                        }
-                        frappe.get_doc(operation_doc).insert(ignore_permissions=True)
-                        frappe.db.commit()
+        for child in node.get('children', []):
+            add_items(child, parent_item_code=item_code, parent_idx=current_idx)
 
-            child_item = {
-                "doctype": "BOM Creator Item",
-                "item_code": item_code,
-                "item_name": item_code or item_name,
-                "description": item_desc,
-                "qty": child.get("qty_per_set", 1),
-                "rate": 0,
-                "uom": "Nos",
-                "is_expandable": 1 if child.get("children") else 0,
-                "bom_created": 0,
-                "allow_alternative_item": 1,
-                "do_not_explode": 1,
-                "stock_qty": child.get("qty_per_set", 1),
-                "conversion_factor": 1,
-                "stock_uom": "Nos",
-                "amount": 0,
-                "fg_item": parent_item_code,
-                "fg_reference_id": parent_item_code,  # Use parent's item_code
-                "parent_row_no": str(parent_row_no) if parent_row_no is not None else None,
-            }
-            items.append(child_item)
-            current_idx = len(items)  # Current 1-based index (idx starts at 1)
-            if child.get("children"):
-                process_children(child["children"], parent_row_no=current_idx, parent_item_code=item_code)
+    for child in bom_json.get('children', []):
+        add_items(child, parent_item_code=item_code, parent_idx=None)
 
-    if bom_json.get("children"):
-        process_children(bom_json["children"], parent_row_no=None, parent_item_code=top_item)
-
-    bom_doc = frappe.get_doc({
+    bom_creator = frappe.get_doc({
         "doctype": "BOM Creator",
-        "item_code": top_item,
-        "item_name": top_item_name,
+        "item_code": item_code,
+        "item_name": description,
         "item_group": "Demo Item Group",
         "qty": 1,
         "uom": "Nos",
         "rm_cost_as_per": "Valuation Rate",
-        "company": frappe.defaults.get_user_default("Company"),
-        "default_warehouse": "Stores - ESOFT",
+        "set_rate_based_on_warehouse": 0,
+        "buying_price_list": "Standard Buying",
+        "plc_conversion_rate": 0,
         "currency": "INR",
         "conversion_rate": 1,
+        "default_warehouse": "Stores - ESOFT",
+        "company": "Esoft (Demo)",
+        "raw_material_cost": 0,
+        "status": "Draft",
         "items": items
     })
 
-    bom_doc.insert(ignore_permissions=True)
-    return bom_doc.name
+    bom_creator.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return bom_creator.name
 
 def is_job_running(job_id):
     try:
@@ -228,7 +208,7 @@ def enqueue_bom_processing(docname):
         method="esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.process_file",
         queue="long",
         job_id=job_id,
-        docname= docname,
+        docname=docname,
     )
 
     return {"status": "started"}
