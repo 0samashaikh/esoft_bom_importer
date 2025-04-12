@@ -118,7 +118,7 @@ def create_bom_creator_from_json(bom_json):
             item_doc = {
                 "doctype": "Item",
                 "item_code": item_code,
-                "item_name": item_name or item_code,
+                "item_name": item_code or item_name,
                 "description": description or item_code,
                 "item_group": item_group,
                 "stock_uom": "Nos",
@@ -146,7 +146,7 @@ def create_bom_creator_from_json(bom_json):
             child_item = {
                 "doctype": "BOM Creator Item",
                 "item_code": item_code,
-                "item_name": item_name,
+                "item_name": item_code or item_name,
                 "description": item_desc,
                 "qty": child.get("qty_per_set", 1),
                 "rate": 0,
