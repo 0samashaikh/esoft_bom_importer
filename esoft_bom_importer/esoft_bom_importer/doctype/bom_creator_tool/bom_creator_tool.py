@@ -5,6 +5,8 @@ import os
 import frappe
 import pandas as pd
 from frappe.model.document import Document
+from rq.job import Job
+from frappe.utils.background_jobs import get_redis_conn
 
 
 class BOMCreatorTool(Document):
@@ -20,8 +22,7 @@ class BOMCreatorTool(Document):
         return {"created_docs": created_docs}
 
 @frappe.whitelist()
-def process_file():
-    docname = frappe.form_dict.docname
+def process_file(docname):
     doc = frappe.get_doc("BOM Creator Tool", docname)
     return doc.process_file()
 
@@ -112,6 +113,12 @@ def give_json(file_url=None):
 def create_bom_creator_from_json(bom_json):
     if not bom_json:
         return
+    
+    # Check if BOM Creator already exists
+    top_item = bom_json.get("item") or bom_json.get("description")
+    if frappe.db.exists("BOM Creator", {"item_code": top_item}):
+        frappe.logger().info(f"BOM Creator for item {top_item} already exists. Skipping...")
+        return None
 
     def ensure_item_exists(item_code, item_name=None, description=None, item_group="Demo Item Group"):
         if not frappe.db.exists("Item", item_code):
@@ -202,15 +209,26 @@ def create_bom_creator_from_json(bom_json):
     bom_doc.insert(ignore_permissions=True)
     return bom_doc.name
 
+def is_job_running(job_id):
+    try:
+        job = Job.fetch(job_id, connection=get_redis_conn())
+        return job.get_status() in ['queued', 'started', 'deferred']
+    except:
+        return False
 
-# class BOMCreatorTool(Document):
-#     def process_file(self):
-#         if not self.excel_file:
-#             frappe.throw("Please upload a file first.")
-#         bom_data = give_json(self.excel_file)
-#         created_docs = []
-#         for bom_json in bom_data:
-#             docname = create_bom_creator_from_json(bom_json)
-#             if docname:
-#                 created_docs.append(docname)
-#         return {"created_docs": created_docs}
+@frappe.whitelist()
+def enqueue_bom_processing(docname):
+    job_id = f"bom_creator_job_{docname}"
+
+    if is_job_running(job_id):
+        frappe.msgprint("A job is already running for this document.")
+        return {"status": "exists"}
+
+    frappe.enqueue(
+        method="esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.process_file",
+        queue="long",
+        job_id=job_id,
+        docname= docname,
+    )
+
+    return {"status": "started"}
