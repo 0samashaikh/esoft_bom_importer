@@ -52,15 +52,12 @@ def give_json(file_url=None):
     # List to store node dictionaries
     nodes = []
 
-    # Helper function to determine item identifier
-    def get_item_identifier(row):
-        return row['Sub-Assembly'].strip() if row['Sub-Assembly'].strip() else row['SR NO'].strip()
-
     # Convert each row into a node dictionary
     for idx, row in df.iterrows():
-        item_id = get_item_identifier(row)
-        if item_id == '':
+        item_id = row['Sub-Assembly'].strip() if row['Sub-Assembly'].strip() else row['SR NO'].strip()
+        if not item_id:
             continue
+
         node = {
             'uid': idx,
             'item': item_id,
@@ -69,27 +66,41 @@ def give_json(file_url=None):
             'parent_item': row.get('Parent', '').strip(),
             'matl': row.get('MATL', '').strip(),
             'operation': row.get('operation', '').strip(),
+            'den': row.get('Den', '').strip(),
+            'qty_per_set': str(row.get('QTY/ SET', 1)),  # Convert to float
+            'length': row.get('L', '').strip(),
+            'width': row.get('W', '').strip(),
+            'thickness': row.get('T', '').strip(),
+            'bl_weight': row.get('BL.WT.', '').strip(),
+            'area_sq_ft': row.get('AREA SQ.FT.', '').strip(),
             'children': []
         }
         nodes.append(node)
 
     # Build the tree structure
     root_nodes = []
-    for i, node in enumerate(nodes):
-        parent_val = node['parent_item']
-        if parent_val:
-            parent_node = next((n for n in nodes[:i] if n['item'] == parent_val), None)
-            if parent_node:
-                parent_node['children'].append(node)
-            else:
-                root_nodes.append(node)
-        else:
+    node_map = {node['item']: node for node in nodes}  # Create lookup map
+    
+    for node in nodes:
+        parent_item = node['parent_item']
+        if parent_item and parent_item in node_map:
+            parent_node = node_map[parent_item]
+            parent_node['children'].append(node)
+        elif not parent_item:
             root_nodes.append(node)
 
-    # Clean up nodes by removing 'uid' and 'parent_item'
+    # Clean up nodes - preserve all technical fields
+    preserved_fields = [
+        'item', 'rev', 'description', 'matl', 'operation',
+        'den', 'qty_per_set', 'length', 'width', 'thickness',
+        'bl_weight', 'area_sq_ft', 'children'
+    ]
+
     def cleanup(node):
-        node.pop('uid', None)
-        node.pop('parent_item', None)
+        keys = list(node.keys())
+        for key in keys:
+            if key not in preserved_fields:
+                node.pop(key, None)
         for child in node['children']:
             cleanup(child)
 
@@ -137,14 +148,14 @@ def create_bom_creator_from_json(bom_json):
                 "item_code": item_code,
                 "item_name": item_name,
                 "description": item_desc,
-                "qty": 1,
+                "qty": child.get("qty_per_set", 1),
                 "rate": 0,
                 "uom": "Nos",
                 "is_expandable": 1 if child.get("children") else 0,
                 "bom_created": 0,
                 "allow_alternative_item": 1,
                 "do_not_explode": 1,
-                "stock_qty": 1,
+                "stock_qty": child.get("qty_per_set", 1),
                 "conversion_factor": 1,
                 "stock_uom": "Nos",
                 "amount": 0,
@@ -177,3 +188,16 @@ def create_bom_creator_from_json(bom_json):
 
     bom_doc.insert(ignore_permissions=True)
     return bom_doc.name
+
+
+# class BOMCreatorTool(Document):
+#     def process_file(self):
+#         if not self.excel_file:
+#             frappe.throw("Please upload a file first.")
+#         bom_data = give_json(self.excel_file)
+#         created_docs = []
+#         for bom_json in bom_data:
+#             docname = create_bom_creator_from_json(bom_json)
+#             if docname:
+#                 created_docs.append(docname)
+#         return {"created_docs": created_docs}
