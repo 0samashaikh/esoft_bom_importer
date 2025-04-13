@@ -24,6 +24,21 @@ class BOMCreatorTool(Document):
         return {"created_docs": created_documents}
 
 @frappe.whitelist()
+def get_bom_preview(docname):
+    """Return list of BOMs that will be created from the Excel file"""
+    doc = frappe.get_doc("BOM Creator Tool", docname)
+    if not doc.excel_file:
+        frappe.throw("Please upload a file first.")
+    
+    bom_data = parse_excel_to_json(doc.excel_file)
+    preview_items = [bom.get('item') for bom in bom_data if bom.get('item')]
+    
+    if not preview_items:
+        frappe.throw("No valid BOM structures found in the file.")
+    
+    return preview_items
+
+@frappe.whitelist()
 def process_file(docname):
     doc = frappe.get_doc("BOM Creator Tool", docname)
     return doc.process_file()
