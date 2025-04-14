@@ -7,6 +7,8 @@ import pandas as pd
 from frappe.model.document import Document
 from rq.job import Job
 from frappe.utils.background_jobs import get_redis_conn
+from esoft_bom_importer.bg_validator import validate_migration_jobs
+# import time
 
 class BOMCreatorTool(Document):
     def process_uploaded_file(self):
@@ -42,6 +44,7 @@ def validate_and_get_fg_products(docname):
 @frappe.whitelist()
 def process_file_and_enqueue(docname):
     """Wrapper function to process file from background job"""
+    # time.sleep(20)
     doc = frappe.get_doc("BOM Creator Tool", docname)
     return doc.process_uploaded_file()
 
@@ -135,9 +138,14 @@ def create_bom_from_hierarchy(bom_structure):
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
 
-    if frappe.db.exists("BOM Creator", {"item_code": item_code}):
-        frappe.log_info(f"Skipping existing BOM Creator for item: {item_code}")
-        return None
+    existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
+    if existing_name:
+        existing_doc = frappe.get_doc("BOM Creator", existing_name)
+        if existing_doc.docstatus == 0:
+            frappe.delete_doc("BOM Creator", existing_name)
+        else:
+            # Skip if already submitted
+            return None
 
     ensure_item_exists(item_code, description)
     bom_items = build_bom_items(bom_structure)
@@ -279,16 +287,11 @@ def check_job_status(job_id):
 @frappe.whitelist()
 def import_bom_creator(docname):
     """Start background job for BOM processing"""
-    job_id = f"bom_processing_{docname}"
-
-    if check_job_status(job_id):
-        frappe.msgprint("BOM processing is already in progress")
-        return {"status": "already_running"}
-
+    validate_migration_jobs()
     frappe.enqueue(
         method=process_file_and_enqueue,
         queue="long",
-        job_id=job_id,
+        job_id="bom_creator_job",
         docname=docname,
     )
 
