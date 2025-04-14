@@ -33,7 +33,7 @@ function handleBomImport(frm) {
 function fetchBomPreview(frm) {
     return new Promise((resolve) => {
         frappe.call({
-            method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.get_bom_preview',
+            method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.validate_and_get_fg_products',
             args: { docname: frm.doc.name },
             callback(response) {
                 resolve(response.message || []);
@@ -86,7 +86,7 @@ function buildBomListMessage(bomList) {
  */
 function processBomCreation(frm) {
     frappe.call({
-        method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.enqueue_bom_processing',
+        method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.import_bom_creator',
         args: { docname: frm.doc.name },
         callback(response) {
             handleBomProcessingResponse(response.message);

@@ -25,7 +25,7 @@ class BOMCreatorTool(Document):
         return {"created_docs": created_documents}
 
 @frappe.whitelist()
-def get_bom_preview(docname):
+def validate_and_get_fg_products(docname):
     """Return list of BOMs that will be created from the Excel file"""
     doc = frappe.get_doc("BOM Creator Tool", docname)
     if not doc.bom_creator:
@@ -40,7 +40,7 @@ def get_bom_preview(docname):
     return preview_items
 
 @frappe.whitelist()
-def process_file(docname):
+def process_file_and_enqueue(docname):
     """Wrapper function to process file from background job"""
     doc = frappe.get_doc("BOM Creator Tool", docname)
     return doc.process_uploaded_file()
@@ -278,7 +278,7 @@ def check_job_status(job_id):
         return False
 
 @frappe.whitelist()
-def enqueue_bom_processing(docname):
+def import_bom_creator(docname):
     """Start background job for BOM processing"""
     job_id = f"bom_processing_{docname}"
 
@@ -287,7 +287,7 @@ def enqueue_bom_processing(docname):
         return {"status": "already_running"}
 
     frappe.enqueue(
-        method="esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.process_file",
+        method=process_file_and_enqueue,
         queue="long",
         job_id=job_id,
         docname=docname,
