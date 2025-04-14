@@ -3,14 +3,14 @@
 
 frappe.ui.form.on("BOM Creator Tool", {
     refresh(frm) {
-        frm.add_custom_button(__('Start Process'), function() {
+        frm.add_custom_button(__('Import BOM Creator'), function() {
             frappe.call({
                 method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.get_bom_preview',
                 args: { docname: frm.doc.name },
                 callback(r) {
                     if (r.message) {
                         const bom_list = r.message;
-                        let message = __('The following BOMs will be created:') + '<br><ul>';
+                        let message = __('The following finished goods BOMs will be created::') + '<br><ul>';
                         
                         bom_list.forEach(bom => {
                             message += `<li>${bom}</li>`;

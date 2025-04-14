@@ -10,10 +10,10 @@ from frappe.utils.background_jobs import get_redis_conn
 
 class BOMCreatorTool(Document):
     def process_file(self):
-        if not self.excel_file:
+        if not self.bom_creator:
             frappe.throw("Please upload a file first.")
 
-        bom_data = parse_excel_to_json(self.excel_file)
+        bom_data = parse_excel_to_json(self.bom_creator)
         created_documents = []
 
         for bom_structure in bom_data:
@@ -27,10 +27,10 @@ class BOMCreatorTool(Document):
 def get_bom_preview(docname):
     """Return list of BOMs that will be created from the Excel file"""
     doc = frappe.get_doc("BOM Creator Tool", docname)
-    if not doc.excel_file:
+    if not doc.bom_creator:
         frappe.throw("Please upload a file first.")
     
-    bom_data = parse_excel_to_json(doc.excel_file)
+    bom_data = parse_excel_to_json(doc.bom_creator)
     preview_items = [bom.get('item') for bom in bom_data if bom.get('item')]
     
     if not preview_items:

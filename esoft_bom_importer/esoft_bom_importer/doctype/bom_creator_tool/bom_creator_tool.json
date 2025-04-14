@@ -5,20 +5,20 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "excel_file"
+  "bom_creator"
  ],
  "fields": [
   {
-   "fieldname": "excel_file",
+   "fieldname": "bom_creator",
    "fieldtype": "Attach",
-   "label": "Excel File"
+   "label": "BOM Creator"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-04-11 23:25:22.269204",
+ "modified": "2025-04-14 22:50:55.180836",
  "modified_by": "Administrator",
  "module": "Esoft Bom Importer",
  "name": "BOM Creator Tool",
