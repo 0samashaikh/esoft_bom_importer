@@ -74,7 +74,6 @@ def clean_dataframe(dataframe):
 
 def build_bom_hierarchy(dataframe):
     """Build hierarchical BOM structure from DataFrame"""
-    nodes = []
     node_map = {}
     root_nodes = []
 
