@@ -3,10 +3,12 @@ import json
 import frappe
 
 
-def log_exception(title, error_obj):
+def log_exception(title, error_obj, reference_doctype=None, reference_name=None):
     frappe.log_error(
         title=title,
         message=json.dumps(error_obj),
+        reference_doctype=reference_doctype,
+        reference_name=reference_name
     )
 
 
