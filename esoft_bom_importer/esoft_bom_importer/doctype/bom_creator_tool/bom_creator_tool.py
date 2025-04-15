@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import os
+import traceback
 import frappe
 import pandas as pd
 from frappe.model.document import Document
@@ -58,7 +59,15 @@ def process_file_and_enqueue(filename):
             if new_bom:
                 created_documents.append(new_bom)
     except Exception as e:
-        log_exception("BOM Creator Tool Error", e)
+        tb = traceback.format_exc()
+        error_body = {
+            "filename": filename,
+            "final_product": "",
+            "index": "",
+            "row": "",
+            "traceback": tb
+        }
+        log_exception("BOM Creator Tool Error", error_body)
 
 @frappe.whitelist(allow_guest=True)
 def parse_excel_data_to_hierarchy(file_path):
