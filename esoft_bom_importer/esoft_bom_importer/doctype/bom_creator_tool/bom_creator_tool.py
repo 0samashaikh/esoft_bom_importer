@@ -27,9 +27,9 @@ def validate_and_get_fg_products(filename):
     dataframe = clean_dataframe(dataframe)
 
     # Validate for missing MATL rows
-    # blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
-    # if blank_rows:
-    #     frappe.throw(f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_rows)}")
+    blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
+    if blank_rows:
+        frappe.throw(f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_rows)}")
 
     # Build BOM data
     bom_data = parse_excel_data_to_hierarchy(filename)
