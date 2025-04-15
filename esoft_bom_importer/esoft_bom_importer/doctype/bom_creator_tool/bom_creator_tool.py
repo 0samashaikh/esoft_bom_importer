@@ -44,7 +44,7 @@ def validate_and_get_fg_products(docname):
     # Validate for missing MATL rows
     blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
     if blank_rows:
-        frappe.throw(f"Please fill the blank rows in the file. These rows are missing MATL:\n{', '.join(str(row) for row in blank_rows)}")
+        frappe.throw(f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_rows)}")
 
     # Build BOM data
     bom_data = parse_excel_data_to_hierarchy(doc.bom_creator)
@@ -58,7 +58,7 @@ def validate_and_get_fg_products(docname):
 
 def get_rows_with_parent_no_matl_from_df(df):
     """Return row numbers with Parent present but MATL blank"""
-    mask = df['Parent'].notna() & (df['Parent'].astype(str).str.strip() != '') & (
+    mask =(
         df['MATL'].isna() | (df['MATL'].astype(str).str.strip() == '')
     )
     return (df[mask].index + 2).tolist()  # Excel-style row numbers
