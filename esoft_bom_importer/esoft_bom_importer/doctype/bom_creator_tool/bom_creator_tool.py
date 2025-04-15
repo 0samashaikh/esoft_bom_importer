@@ -135,7 +135,7 @@ def create_bom_from_hierarchy(bom_structure):
 
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
-
+    item_group= bom_structure.get("matl") or "Demo Item Group"
     existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
     if existing_name:
         existing_doc = frappe.get_doc("BOM Creator", existing_name)
@@ -145,23 +145,32 @@ def create_bom_from_hierarchy(bom_structure):
             # Skip if already submitted
             return None
 
-    ensure_item_exists(item_code, description)
+    ensure_item_exists(item_code, description,item_group)
     bom_items = build_bom_items(bom_structure)
 
     bom_creator = create_bom_creator_document(item_code, description, bom_items)
     return bom_creator.name
 
-def ensure_item_exists(item_code, description):
+def ensure_item_exists(item_code, description,item_group):
     """Create Item if it doesn't exist"""
     if frappe.db.exists("Item", item_code):
         return
+    
+    if item_group and not frappe.db.exists("Item Group", item_group):
+        frappe.get_doc({
+            "doctype": "Item Group",
+            "item_group_name": item_group,
+            "parent_item_group": "All Item Groups",  # Default
+            "is_group": 0
+        }).insert(ignore_permissions=True)
+        frappe.db.commit()
 
     item_data = {
         "doctype": "Item",
         "item_code": item_code,
         "item_name": item_code,
         "description": description,
-        "item_group": "Demo Item Group",
+        "item_group": item_group or "Demo Item Group",
         "stock_uom": "Nos",
         "is_stock_item": 0
     }
@@ -175,7 +184,7 @@ def build_bom_items(bom_structure):
 
     def add_child_items(node, parent_code, parent_idx=None):
         # Ensure this item exists first
-        ensure_item_exists(node['item'], node.get('description', node['item']))
+        ensure_item_exists(node['item'], node.get('description', node['item']),node.get('matl'))
         
         # Create item entry
         item_entry = create_bom_item_entry(node, parent_code, parent_idx)
@@ -201,7 +210,7 @@ def build_bom_items(bom_structure):
 
 def recursively_ensure_items(node):
     """Recursively ensure all items in hierarchy exist"""
-    ensure_item_exists(node['item'], node.get('description', node['item']))
+    ensure_item_exists(node['item'], node.get('description', node['item']),node.get('matl'))
     for child in node.get('children', []):
         recursively_ensure_items(child)
 
