@@ -32,13 +32,36 @@ def validate_and_get_fg_products(docname):
     if not doc.bom_creator:
         frappe.throw("Please upload a file first.")
     
-    bom_data = parse_excel_data_to_hierarchy(doc.bom_creator)
-    preview_items = [bom.get('item') for bom in bom_data if bom.get('item')]
+    validate_migration_jobs()
     
+    # Get and clean file
+    file_doc = frappe.get_doc("File", {"file_url": doc.bom_creator})
+    full_path = file_doc.get_full_path()
+    file_extension = os.path.splitext(full_path)[1].lower()
+    dataframe = read_spreadsheet_file(full_path, file_extension)
+    dataframe = clean_dataframe(dataframe)
+
+    # Validate for missing MATL rows
+    blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
+    if blank_rows:
+        frappe.throw(f"Please fill the blank rows in the file. These rows are missing MATL:\n{', '.join(str(row) for row in blank_rows)}")
+
+    # Build BOM data
+    bom_data = parse_excel_data_to_hierarchy(doc.bom_creator)
+
+    preview_items = [bom.get('item') for bom in bom_data if bom.get('item')]
     if not preview_items:
         frappe.throw("No valid BOM structures found in the file.")
     
     return preview_items
+
+
+def get_rows_with_parent_no_matl_from_df(df):
+    """Return row numbers with Parent present but MATL blank"""
+    mask = df['Parent'].notna() & (df['Parent'].astype(str).str.strip() != '') & (
+        df['MATL'].isna() | (df['MATL'].astype(str).str.strip() == '')
+    )
+    return (df[mask].index + 2).tolist()  # Excel-style row numbers
 
 @frappe.whitelist()
 def process_file_and_enqueue(docname):
@@ -135,7 +158,7 @@ def create_bom_from_hierarchy(bom_structure):
 
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
-    item_group= bom_structure.get("matl") or "Demo Item Group"
+    item_group= bom_structure.get("matl") or "All Item Groups"
     existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
     if existing_name:
         existing_doc = frappe.get_doc("BOM Creator", existing_name)
@@ -170,7 +193,7 @@ def ensure_item_exists(item_code, description,item_group):
         "item_code": item_code,
         "item_name": item_code,
         "description": description,
-        "item_group": item_group or "Demo Item Group",
+        "item_group": item_group or "All Item Groups",
         "stock_uom": "Nos",
         "is_stock_item": 0
     }
@@ -262,7 +285,7 @@ def create_bom_creator_document(item_code, description, items):
         "doctype": "BOM Creator",
         "item_code": item_code,
         "item_name": description,
-        "item_group": "Demo Item Group",
+        "item_group": "All Item Groups",
         "qty": 1,
         "uom": "Nos",
         "rm_cost_as_per": "Valuation Rate",
@@ -294,7 +317,6 @@ def check_job_status(job_id):
 @frappe.whitelist()
 def import_bom_creator(docname):
     """Start background job for BOM processing"""
-    validate_migration_jobs()
     frappe.enqueue(
         method=process_file_and_enqueue,
         queue="long",
