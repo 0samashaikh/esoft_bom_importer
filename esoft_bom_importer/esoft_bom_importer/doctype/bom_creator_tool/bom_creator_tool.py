@@ -8,7 +8,6 @@ from frappe.model.document import Document
 from rq.job import Job
 from frappe.utils.background_jobs import get_redis_conn
 from esoft_bom_importer.bg_validator import validate_migration_jobs
-# import time
 
 class BOMCreatorTool(Document):
     def process_uploaded_file(self):
@@ -44,7 +43,6 @@ def validate_and_get_fg_products(docname):
 @frappe.whitelist()
 def process_file_and_enqueue(docname):
     """Wrapper function to process file from background job"""
-    # time.sleep(20)
     doc = frappe.get_doc("BOM Creator Tool", docname)
     return doc.process_uploaded_file()
 
