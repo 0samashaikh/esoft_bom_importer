@@ -5,49 +5,34 @@ import os
 import frappe
 import pandas as pd
 from frappe.model.document import Document
-from rq.job import Job
-from frappe.utils.background_jobs import get_redis_conn
 from esoft_bom_importer.bg_validator import validate_migration_jobs
-
+from erpnext import get_default_company
+from esoft_bom_importer.handle_exception import log_exception
 class BOMCreatorTool(Document):
-    def process_uploaded_file(self):
-        """Main method to process uploaded file and create BOMs"""
-        if not self.bom_creator:
-            frappe.throw("Please upload a file first.")
-
-        bom_hierarchy = parse_excel_data_to_hierarchy(self.bom_creator)
-        created_documents = []
-
-        for bom_structure in bom_hierarchy:
-            new_bom = create_bom_from_hierarchy(bom_structure)
-            if new_bom:
-                created_documents.append(new_bom)
-
-        return {"created_docs": created_documents}
+    pass
 
 @frappe.whitelist()
-def validate_and_get_fg_products(docname):
+def validate_and_get_fg_products(filename):
     """Return list of BOMs that will be created from the Excel file"""
-    doc = frappe.get_doc("BOM Creator Tool", docname)
-    if not doc.bom_creator:
+    if not filename:
         frappe.throw("Please upload a file first.")
     
     validate_migration_jobs()
     
     # Get and clean file
-    file_doc = frappe.get_doc("File", {"file_url": doc.bom_creator})
+    file_doc = frappe.get_doc("File", {"file_url": filename})
     full_path = file_doc.get_full_path()
     file_extension = os.path.splitext(full_path)[1].lower()
     dataframe = read_spreadsheet_file(full_path, file_extension)
     dataframe = clean_dataframe(dataframe)
 
     # Validate for missing MATL rows
-    blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
-    if blank_rows:
-        frappe.throw(f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_rows)}")
+    # blank_rows = get_rows_with_parent_no_matl_from_df(dataframe)
+    # if blank_rows:
+    #     frappe.throw(f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_rows)}")
 
     # Build BOM data
-    bom_data = parse_excel_data_to_hierarchy(doc.bom_creator)
+    bom_data = parse_excel_data_to_hierarchy(filename)
 
     preview_items = [bom.get('item') for bom in bom_data if bom.get('item')]
     if not preview_items:
@@ -63,11 +48,17 @@ def get_rows_with_parent_no_matl_from_df(df):
     )
     return (df[mask].index + 2).tolist()  # Excel-style row numbers
 
-@frappe.whitelist()
-def process_file_and_enqueue(docname):
+def process_file_and_enqueue(filename):
     """Wrapper function to process file from background job"""
-    doc = frappe.get_doc("BOM Creator Tool", docname)
-    return doc.process_uploaded_file()
+    try:
+        bom_hierarchy = parse_excel_data_to_hierarchy(filename)
+        created_documents = []
+        for bom_structure in bom_hierarchy:
+            new_bom = create_bom_from_hierarchy(bom_structure)
+            if new_bom:
+                created_documents.append(new_bom)
+    except Exception as e:
+        log_exception("BOM Creator Tool Error", e)
 
 @frappe.whitelist(allow_guest=True)
 def parse_excel_data_to_hierarchy(file_path):
@@ -158,7 +149,7 @@ def create_bom_from_hierarchy(bom_structure):
 
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
-    item_group= bom_structure.get("matl") or "All Item Groups"
+    item_group= bom_structure.get("matl")
     existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
     if existing_name:
         existing_doc = frappe.get_doc("BOM Creator", existing_name)
@@ -180,20 +171,14 @@ def ensure_item_exists(item_code, description,item_group):
         return
     
     if item_group and not frappe.db.exists("Item Group", item_group):
-        frappe.get_doc({
-            "doctype": "Item Group",
-            "item_group_name": item_group,
-            "parent_item_group": "All Item Groups",  # Default
-            "is_group": 0
-        }).insert(ignore_permissions=True)
-        frappe.db.commit()
+        frappe.throw(f"Item Group '{item_group}' does not exist. Please create it first.")
 
     item_data = {
         "doctype": "Item",
         "item_code": item_code,
         "item_name": item_code,
         "description": description,
-        "item_group": item_group or "All Item Groups",
+        "item_group": item_group,
         "stock_uom": "Nos",
         "is_stock_item": 0
     }
@@ -281,22 +266,14 @@ def create_operation(operation_name):
 
 def create_bom_creator_document(item_code, description, items):
     """Create complete BOM Creator document with all required fields"""
+    company = get_default_company()
     bom_data = {
         "doctype": "BOM Creator",
         "item_code": item_code,
         "item_name": description,
-        "item_group": "All Item Groups",
         "qty": 1,
         "uom": "Nos",
-        "rm_cost_as_per": "Valuation Rate",
-        "set_rate_based_on_warehouse": 0,
-        "buying_price_list": "Standard Buying",
-        "plc_conversion_rate": 0,
-        "currency": "INR",
-        "conversion_rate": 1,
-        "default_warehouse": "Stores - ESOFT",
-        "company": "Esoft (Demo)",
-        "raw_material_cost": 0,
+        "company": company,
         "status": "Draft",
         "items": items
     }
@@ -306,22 +283,14 @@ def create_bom_creator_document(item_code, description, items):
     frappe.db.commit()
     return bom_creator
 
-def check_job_status(job_id):
-    """Check if background job is running"""
-    try:
-        job = Job.fetch(job_id, connection=get_redis_conn())
-        return job.get_status() in ['queued', 'started', 'deferred']
-    except Exception:
-        return False
-
 @frappe.whitelist()
-def import_bom_creator(docname):
+def import_bom_creator(filename):
     """Start background job for BOM processing"""
     frappe.enqueue(
         method=process_file_and_enqueue,
         queue="long",
         job_id="bom_creator_job",
-        docname=docname,
+        filename=filename,
     )
 
     return {"status": "started"}

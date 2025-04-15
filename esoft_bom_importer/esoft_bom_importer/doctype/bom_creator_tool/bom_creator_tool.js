@@ -11,7 +11,7 @@ frappe.ui.form.on("BOM Creator Tool", {
 function handleImportClick(frm) {
     frappe.call({
         method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.validate_and_get_fg_products',
-        args: { docname: frm.doc.name },
+        args: { filename: frm.doc.bom_creator },
         callback: (response) => {
             const bomList = response.message || [];
             if (bomList.length === 0) return;
@@ -42,13 +42,9 @@ function showConfirmationDialog(bomList, frm) {
 function initiateBomCreation(frm) {
     frappe.call({
         method: 'esoft_bom_importer.esoft_bom_importer.doctype.bom_creator_tool.bom_creator_tool.import_bom_creator',
-        args: { docname: frm.doc.name },
+        args: { filename: frm.doc.bom_creator },
         callback: (response) => {
-            const result = response.message;
-            const msg = result.status === 'exists'
-                ? ('A job is already running for this document.')
-                : ('BOM creation started successfully. Check background jobs for progress.');
-
+            const msg = ('BOM creation started successfully. Check background jobs for progress.');
             frappe.msgprint(msg);
         }
     });
