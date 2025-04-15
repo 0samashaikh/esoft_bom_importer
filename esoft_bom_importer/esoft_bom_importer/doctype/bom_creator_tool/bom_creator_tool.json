@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-11 23:24:18.030886",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bom_creator",
+  "error",
+  "status"
+ ],
+ "fields": [
+  {
+   "fieldname": "bom_creator",
+   "fieldtype": "Attach",
+   "label": "BOM Creator"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Long Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "BOM Creator Status",
+   "options": "\nIn Progress\nFailed\nSuccess\nPartial Success",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-04-15 21:38:49.979314",
+ "modified_by": "Administrator",
+ "module": "Esoft Bom Importer",
+ "name": "BOM Creator Tool",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
