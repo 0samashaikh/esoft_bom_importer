@@ -1,71 +1,158 @@
-from esoft_bom_importer.handle_exception import log_exception
 from esoft_bom_importer.progress import set_progress
 import pandas as pd
 import frappe
 from pathlib import Path
 from erpnext import get_default_company
+from frappe.utils import now
+from datetime import datetime
 
 
-
-def create_bom_from_hierarchy(bom_structure, current_index, total_length):
-    # return
-    """Create BOM Creator document from hierarchical structure"""
-    if not bom_structure:
-        return None
-
+def create_bom_from_hierarchy(
+    bom_structure, current_index, total_length, history, should_proceed=True
+):
     item_code = bom_structure.get("item")
-    parent_item = bom_structure.get("parent_item")
-    description = bom_structure.get("description") or item_code
-    item_group = bom_structure.get("matl")
-    operations = bom_structure.get("operation")
     index = bom_structure.get("index")
+    is_last_itr = current_index + 1 == total_length
 
-    existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
-    if existing_name:
-        existing_doc = frappe.get_doc("BOM Creator", existing_name)
-        if existing_doc.docstatus == 0:
-            frappe.delete_doc("BOM Creator", existing_name)
-        else:
-            # Skip if already submitted
-            return None
-    try:
-        item = get_or_create_item(item_code, description, item_group, operations)
-        create_bom_creator_document(bom_structure, item)
+    update_bom_creator_tool_status(history, "In Progress")
 
-        progress = set_progress(current_index+1, total_length, "Import BOM Creator")
-        doc = frappe.get_single("BOM Creator Tool")
+    if should_proceed:
+        existing_name = frappe.db.exists("BOM Creator", {"item_code": item_code})
+        if existing_name:
+            existing_doc = frappe.get_doc("BOM Creator", existing_name)
+            if existing_doc.docstatus == 0:
+                frappe.delete_doc("BOM Creator", existing_name)
+            else:
+                # Skip if already submitted
+                return None
 
-        # ToDo:
-        #  check if jobs are running then set Running state else Success
+        try:
+            create_bom_creator_document(bom_structure)
+        except Exception as e:
+            traceback = frappe.get_traceback()
+            histoy_doc = frappe.get_doc("BOM Creator Tool History", history)
+            histoy_doc.append(
+                "error_logs",
+                {
+                    "error": str(e),
+                    "final_product": item_code,
+                    "row_number": int(index),
+                    "failed_while": "Running",
+                    "full_traceback": traceback,
+                },
+            )
+            histoy_doc.save()
 
-        if not doc.error:
-            doc.status = "Success"
-        else:
-            doc.status = "Failed"
-        
-        if progress < 100:
-            doc.status = "In Progress"
+    set_progress(current_index + 1, total_length, "Import BOM Creator")
 
-        doc.save()
-    except Exception as e:
-        traceback = frappe.get_traceback()
-        # create Error Log entry for better debugging
-        log_exception(
-            title=f"Creation of {item_code} failed",
-            error_obj={
-                "reason": str(e),
-                "row": index,
-                "full_traceback": traceback,
-            },
-            reference_doctype="BOM Creator Tool",
+    if is_last_itr:
+        update_bom_creation_tool_history(history)
+
+
+def update_bom_creation_tool_history(history):
+    status = "Success"
+
+    # set Failed if entry is found in log child table
+    if frappe.db.exists("BOM Creator History Log", {"parent": history}):
+        status = "Failed"
+        update_bom_creator_tool_status(history, status)
+
+    completed_at = now()
+    completed_at_parsed = datetime.strptime(completed_at, "%Y-%m-%d %H:%M:%S.%f")
+    started_at = frappe.db.get_value("BOM Creator Tool History", history, "started_at")
+    diff = completed_at_parsed - started_at
+    diff = round(diff.total_seconds() / 60)
+
+    frappe.db.set_value(
+        "BOM Creator Tool History",
+        history,
+        {"completed_at": now(), "time_taken": str(diff)},
+    )
+
+
+def update_bom_creator_tool_status(history, status):
+    frappe.db.set_single_value("BOM Creator Tool", "status", status)
+    frappe.db.set_value("BOM Creator Tool History", history, "job_status", status)
+
+
+def validate_and_enqueue_bom_creation(bom_tree, history):
+    total_length = len(bom_tree)
+    history_doc = frappe.get_doc("BOM Creator Tool History", history)
+
+    for index, bom_structure in enumerate(bom_tree):
+        is_last_itr = index == (total_length - 1)
+        should_proceed = validate_bom_structure(bom_structure, history_doc, is_last_itr)
+        frappe.enqueue(
+            method=create_bom_from_hierarchy,
+            queue="long",
+            job_name="bom_creator_job",
+            bom_structure=bom_structure,
+            current_index=index,
+            total_length=total_length,
+            history=history,
+            should_proceed=should_proceed,
         )
 
-        # store last error here
-        # ToDo: move it to new history doctype
-        doc = frappe.get_single("BOM Creator Tool")
-        doc.error = e
-        doc.status = "Failed"
-        doc.save()
+    history_doc.save()
+
+
+def validate_bom_structure(
+    bom_structure,
+    history_doc,
+    is_last_itr,
+    final_product=None,
+    should_proceed=True,
+):
+    if not final_product:
+        final_product = bom_structure.get("item")
+
+    item_group = bom_structure.get("matl")
+    index = bom_structure.get("index")
+    operations = bom_structure.get("operation")
+    operations = operations.split("+")
+
+    if not frappe.db.exists("Item Group", item_group):
+        err = f"Item Group {item_group} does not exist in the system. Please create it before importing BOM."
+        history_doc.append(
+            "error_logs",
+            {
+                "error": err,
+                "final_product": final_product,
+                "row_number": int(index),
+                "failed_while": "Validating",
+            },
+        )
+        should_proceed = False
+
+    for operation in operations:
+        operation = operation.strip()
+        if not frappe.db.exists("Operation", operation):
+            err = f"Operation {operation} does not exist in the system. Please create it before importing BOM."
+            history_doc.append(
+                "error_logs",
+                {
+                    "error": err,
+                    "final_product": final_product,
+                    "row_number": int(index),
+                    "failed_while": "Validating",
+                },
+            )
+            should_proceed = False
+
+    for child in bom_structure.get("children", []):
+        is_valid_child = validate_bom_structure(
+            bom_structure=child,
+            history_doc=history_doc,
+            is_last_itr=is_last_itr,
+            should_proceed=should_proceed,
+            final_product=final_product,
+        )
+
+        # once its false, it will not be true again
+        should_proceed &= is_valid_child
+
+    return should_proceed
+
 
 def get_file_full_path(file):
     file_doc = frappe.get_doc("File", {"file_url": file})
@@ -95,7 +182,10 @@ def clean_dataframe(dataframe):
 
 
 def validate_matl_col(df):
-    """Return row numbers with Parent present but MATL blank"""
+    """
+    Throw error if any of the MATL column is blank
+    """
+
     matl = df["MATL"].isna() | (df["MATL"].astype(str).str.strip() == "")
     blank_matl_rows = (df[matl].index + 2).tolist()
 
@@ -236,9 +326,9 @@ def get_or_create_item(item_code, description="", item_group="", operations=""):
 def get_operations(operations):
     if not operations:
         return None
-    
+
     operations = operations.split("+")
-    
+
     for operation in operations:
         operation = operation.strip()
         if operation and not frappe.db.exists("Operation", operation):
@@ -258,8 +348,15 @@ def get_item_group(group_name):
     return item_group
 
 
-def create_bom_creator_document(bom_structure, item):
+def create_bom_creator_document(bom_structure):
     """Create complete BOM Creator document with all required fields"""
+    item_code = bom_structure.get("item")
+    description = bom_structure.get("description") or item_code
+    item_group = bom_structure.get("matl")
+    operations = bom_structure.get("operation")
+
+    item = get_or_create_item(item_code, description, item_group, operations)
+
     company = get_default_company()
     bom_data = {
         "doctype": "BOM Creator",
