@@ -6,8 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "bom_creator",
-  "error",
-  "status"
+  "status",
+  "bom_creator_history"
  ],
  "fields": [
   {
@@ -16,23 +16,22 @@
    "label": "BOM Creator"
   },
   {
-   "fieldname": "error",
-   "fieldtype": "Long Text",
-   "label": "Error",
-   "read_only": 1
-  },
-  {
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "BOM Creator Status",
-   "options": "\nIn Progress\nFailed\nSuccess\nPartial Success",
+   "options": "\nValidating\nIn Progress\nFailed\nSuccess",
    "read_only": 1
+  },
+  {
+   "fieldname": "bom_creator_history",
+   "fieldtype": "Button",
+   "label": "Failed History"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-04-15 21:38:49.979314",
+ "modified": "2025-04-17 02:20:00.834374",
  "modified_by": "Administrator",
  "module": "Esoft Bom Importer",
  "name": "BOM Creator Tool",

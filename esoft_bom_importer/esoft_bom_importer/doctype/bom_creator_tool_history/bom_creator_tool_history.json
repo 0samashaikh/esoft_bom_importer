@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:IMPORT-{#####}",
+ "creation": "2025-04-16 21:40:52.260179",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "job_name",
+  "started_at",
+  "completed_at",
+  "file",
+  "column_break_prxc",
+  "job_status",
+  "started_by",
+  "time_taken",
+  "seen",
+  "section_break_pged",
+  "error_logs"
+ ],
+ "fields": [
+  {
+   "fieldname": "started_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Started By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_prxc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "job_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Job Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_pged",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "error_logs",
+   "fieldtype": "Table",
+   "label": "Error Logs",
+   "options": "BOM Creator History Log"
+  },
+  {
+   "fieldname": "job_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Job Status",
+   "options": "\nValidating\nIn Progress\nFailed\nSuccess",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "seen",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Seen"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "description": "In Minutes",
+   "fieldname": "time_taken",
+   "fieldtype": "Data",
+   "label": "Time Taken",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-04-17 02:37:32.663973",
+ "modified_by": "Administrator",
+ "module": "Esoft Bom Importer",
+ "name": "BOM Creator Tool History",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

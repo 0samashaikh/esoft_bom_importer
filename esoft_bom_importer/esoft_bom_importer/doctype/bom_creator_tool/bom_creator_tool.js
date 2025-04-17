@@ -4,13 +4,25 @@
 frappe.ui.form.on("BOM Creator Tool", {
     refresh(frm) {
         addCustomButtons(frm)
+    },
+    
+    bom_creator_history(frm) {
+        redirect_to_bom_history(frm)
     }
 });
+
+function redirect_to_bom_history(frm) {
+    frappe.route_options = {
+        job_name: "bom_creator_job",
+        file: frm.doc.bom_creator,
+        job_status: "Failed"
+    };
+    frappe.set_route("List", "BOM Creator Tool History");
+}
 
 function addCustomButtons(frm) {
     addImportButton(frm)
     addProgressButton(frm)
-    addErrorLogButton(frm)
 }
 
 function showConfirmationDialog(bomList, frm) {
@@ -89,11 +101,3 @@ function addProgressButton(frm) {
     });
 }
 
-function addErrorLogButton(frm) {
-    frm.add_custom_button("Error Log", () => {
-        frappe.route_options = {
-            reference_doctype: frm.doc.doctype,
-        };
-        frappe.set_route("List", "Error Log");
-    })
-}
