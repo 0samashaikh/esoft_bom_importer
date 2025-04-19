@@ -189,7 +189,8 @@ def validate_matl_col(df):
     matl = df["MATL"].isna() | (df["MATL"].astype(str).str.strip() == "")
     blank_matl_rows = (df[matl].index + 2).tolist()
 
-    frappe.throw(
+    if blank_matl_rows:
+        frappe.throw(
         f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_matl_rows)}"
     )
 
