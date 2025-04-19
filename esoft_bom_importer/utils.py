@@ -55,7 +55,8 @@ def update_bom_creation_tool_history(history):
     # set Failed if entry is found in log child table
     if frappe.db.exists("BOM Creator History Log", {"parent": history}):
         status = "Failed"
-        update_bom_creator_tool_status(history, status)
+    
+    update_bom_creator_tool_status(history, status)
 
     completed_at = now()
     completed_at_parsed = datetime.strptime(completed_at, "%Y-%m-%d %H:%M:%S.%f")
@@ -110,6 +111,7 @@ def validate_bom_structure(
     index = bom_structure.get("index")
     operations = bom_structure.get("operation")
     operations = operations.split("+")
+    hsn_code = bom_structure.get("hsn_code")
 
     if not frappe.db.exists("Item Group", item_group):
         err = f"Item Group {item_group} does not exist in the system. Please create it before importing BOM."
@@ -123,10 +125,23 @@ def validate_bom_structure(
             },
         )
         should_proceed = False
+    
+    if not frappe.db.exists("GST HSN Code", hsn_code):
+        err = f"GST HSN Code {hsn_code} does not exist in the system. Please create it before importing BOM."
+        history_doc.append(
+            "error_logs",
+            {
+                "error": err,
+                "final_product": final_product,
+                "row_number": int(index),
+                "failed_while": "Validating",
+            },
+        )
+        should_proceed = False
 
     for operation in operations:
         operation = operation.strip()
-        
+
         if operation and not frappe.db.exists("Operation", operation):
             err = f"Operation {operation} does not exist in the system. Please create it before importing BOM."
             history_doc.append(
@@ -173,7 +188,7 @@ def convert_spreadsheet_to_json(file: str) -> pd.DataFrame:
 
     df = clean_dataframe(df)
 
-    validate_matl_col(df)
+    validate_mandatory_cols(df)
 
     return get_bom_tree_json(df)
 
@@ -182,18 +197,37 @@ def clean_dataframe(dataframe):
     return dataframe.fillna("").map(lambda x: x.strip() if isinstance(x, str) else x)
 
 
-def validate_matl_col(df):
-    """
-    Throw error if any of the MATL column is blank
-    """
+def validate_mandatory_cols(df):
 
+    blank_matl_rows = get_matl_blank_rows(df)
+    blank_hsn_rows = get_hsn_blank_rows(df)
+
+    err = []
+    if blank_matl_rows:
+        err.append(
+            f"<li>The following rows are missing the <b>MATL</b> value in the attached BOM Creator file:</li>\n{', '.join('Row '+str(row) for row in blank_matl_rows)}"
+        )
+
+    if blank_hsn_rows:
+        err.append(
+            f"<li>The following rows are missing the <b>HSN/SAC</b> value in the attached BOM Creator file:</li>\n{', '.join('Row '+str(row) for row in blank_hsn_rows)}"
+        )
+    if err:
+        frappe.throw("<br /><br />".join(err))
+
+
+def get_matl_blank_rows(df):
     matl = df["MATL"].isna() | (df["MATL"].astype(str).str.strip() == "")
     blank_matl_rows = (df[matl].index + 2).tolist()
 
-    if blank_matl_rows:
-        frappe.throw(
-        f"The following rows are missing the MATL value in the attached BOM Creator file:\n{', '.join('Row '+str(row) for row in blank_matl_rows)}"
-    )
+    return blank_matl_rows
+
+
+def get_hsn_blank_rows(df):
+    matl = df["HSN/SAC"].isna() | (df["HSN/SAC"].astype(str).str.strip() == "")
+    blank_hsn_rows = (df[matl].index + 2).tolist()
+
+    return blank_hsn_rows
 
 
 def get_bom_tree_json(df):
@@ -224,6 +258,7 @@ def get_bom_tree_json(df):
             "thickness": clean(row.get("T")),
             "bl_weight": clean(row.get("BL.WT.")),
             "area_sq_ft": clean(row.get("AREA SQ.FT.")),
+            "hsn_code": clean(row.get("HSN/SAC")),
             "children": [],
         }
 
@@ -236,56 +271,6 @@ def get_bom_tree_json(df):
             root_nodes.append(node)
 
     return root_nodes
-
-
-def get_bom_json(dataframe):
-    """Build hierarchical BOM structure from DataFrame"""
-    node_map = {}
-    root_nodes = []
-
-    for row_index, row_data in dataframe.iterrows():
-        node = get_item_obj(row_data, row_index)
-        if not node:
-            continue
-
-        node_map[node["item"]] = node
-        parent_item = row_data.get("Parent", "").strip()
-
-        if parent_item:
-            add_node_to_parent(parent_item, node, node_map, root_nodes)
-        else:
-            root_nodes.append(node)
-
-    return root_nodes
-
-
-def get_item_obj(row_data, row_index):
-    """Create a BOM node from DataFrame row"""
-    sub_assembly = row_data.get("Sub-Assembly", "").strip()
-    sr_no = row_data.get("SR NO", "").strip()
-    item_id = sub_assembly or sr_no
-
-    if not item_id:
-        return None
-
-    return {
-        "row": row_index + 2,
-        "item": item_id,
-        "rev": row_data.get("REV", "").strip(),
-        "description": row_data.get("PART DESCRIPTION", "").strip(),
-        "parent_item": row_data.get("Parent", "").strip(),
-        "matl": row_data.get("MATL", "").strip(),
-        "operation": row_data.get("operation", "").strip(),
-        "den": row_data.get("Den", "").strip(),
-        "qty_per_set": row_data.get("QTY/ SET", "1").strip(),
-        "length": row_data.get("L", "").strip(),
-        "width": row_data.get("W", "").strip(),
-        "thickness": row_data.get("T", "").strip(),
-        "bl_weight": row_data.get("BL.WT.", "").strip(),
-        "area_sq_ft": row_data.get("AREA SQ.FT.", "").strip(),
-        "children": [],
-    }
-
 
 def add_node_to_parent(parent_item, node, node_map, root_nodes):
     """Add node to its parent or root if parent not found"""
@@ -304,7 +289,9 @@ def get_fg_products(bom_tree):
     return fg_products
 
 
-def get_or_create_item(item_code, description="", item_group="", operations=""):
+def get_or_create_item(
+    item_code, description="", item_group="", operations="", hsn_code=""
+):
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
 
@@ -319,10 +306,21 @@ def get_or_create_item(item_code, description="", item_group="", operations=""):
         "item_group": get_item_group(item_group),
         "stock_uom": "Nos",
         "is_stock_item": 0,
+        "gst_hsn_code": get_gst_hsn_code(hsn_code),
     }
 
     item = frappe.get_doc(item_data).insert(ignore_permissions=True)
     return item
+
+
+def get_gst_hsn_code(hsn_code):
+    hsn_code = frappe.db.exists("GST HSN Code", hsn_code)
+    if not hsn_code:
+        frappe.throw(
+            f"GST HSN Code {hsn_code} does not exist in the system. Please create it before importing BOM."
+        )
+
+    return hsn_code
 
 
 def get_operations(operations):
@@ -356,8 +354,9 @@ def create_bom_creator_document(bom_structure):
     description = bom_structure.get("description") or item_code
     item_group = bom_structure.get("matl")
     operations = bom_structure.get("operation")
+    hsn_code = bom_structure.get("hsn_code")
 
-    item = get_or_create_item(item_code, description, item_group, operations)
+    item = get_or_create_item(item_code, description, item_group, operations, hsn_code)
 
     company = get_default_company()
     bom_data = {
@@ -387,6 +386,7 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
             child.get("description"),
             child.get("matl"),
             child.get("operation"),
+            child.get("hsn_code"),
         )
         item = {
             "doctype": "BOM Creator Item",

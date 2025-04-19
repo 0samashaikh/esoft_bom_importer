@@ -12,7 +12,7 @@ class BOMCreatorToolHistory(Document):
 
     def update_seen_status(self):
         # skip updating db if job is running to avoid db bottleneck
-        if is_migration_jobs_queued() and self.job_status in ["Validating", "In Progress"]:
+        if is_migration_jobs_queued() or self.job_status in ["Validating", "In Progress"]:
             return
 
         if not self.seen:
