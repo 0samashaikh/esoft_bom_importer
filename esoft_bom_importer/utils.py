@@ -126,7 +126,8 @@ def validate_bom_structure(
 
     for operation in operations:
         operation = operation.strip()
-        if not frappe.db.exists("Operation", operation):
+        
+        if operation and not frappe.db.exists("Operation", operation):
             err = f"Operation {operation} does not exist in the system. Please create it before importing BOM."
             history_doc.append(
                 "error_logs",
