@@ -55,7 +55,7 @@ def update_bom_creation_tool_history(history):
     # set Failed if entry is found in log child table
     if frappe.db.exists("BOM Creator History Log", {"parent": history}):
         status = "Failed"
-    
+
     update_bom_creator_tool_status(history, status)
 
     completed_at = now()
@@ -125,7 +125,7 @@ def validate_bom_structure(
             },
         )
         should_proceed = False
-    
+
     if not frappe.db.exists("GST HSN Code", hsn_code):
         err = f"GST HSN Code {hsn_code} does not exist in the system. Please create it before importing BOM."
         history_doc.append(
@@ -253,11 +253,11 @@ def get_bom_tree_json(df):
             "operation": clean(row.get("operation")),
             "den": clean(row.get("Den")),
             "qty_per_set": clean(row.get("QTY/ SET")) or "1",
-            "length": clean(row.get("L")),
-            "width": clean(row.get("W")),
-            "thickness": clean(row.get("T")),
-            "bl_weight": clean(row.get("BL.WT.")),
-            "area_sq_ft": clean(row.get("AREA SQ.FT.")),
+            "length": clean(row.get("L")) or 0,
+            "width": clean(row.get("W")) or 0,
+            "thickness": clean(row.get("T")) or 0,
+            "bl_weight": clean(row.get("BL.WT.")) or 0,
+            "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
             "hsn_code": clean(row.get("HSN/SAC")),
             "children": [],
         }
@@ -271,6 +271,7 @@ def get_bom_tree_json(df):
             root_nodes.append(node)
 
     return root_nodes
+
 
 def add_node_to_parent(parent_item, node, node_map, root_nodes):
     """Add node to its parent or root if parent not found"""
@@ -289,14 +290,15 @@ def get_fg_products(bom_tree):
     return fg_products
 
 
-def get_or_create_item(
-    item_code, description="", item_group="", operations="", hsn_code=""
-):
+def get_or_create_item(bom_structure):
+    item_code = bom_structure.get("item")
+    description = bom_structure.get("description") or item_code
+    item_group = bom_structure.get("matl")
+    hsn_code = bom_structure.get("hsn_code")
+    rev = bom_structure.get("rev") or 0
+
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
-
-    # ToDo: add these opetions in item child table
-    operations = get_operations(operations)
 
     item_data = {
         "doctype": "Item",
@@ -304,6 +306,7 @@ def get_or_create_item(
         "item_name": item_code,
         "description": description,
         "item_group": get_item_group(item_group),
+        "custom_rev": rev,
         "stock_uom": "Nos",
         "is_stock_item": 0,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
@@ -350,13 +353,7 @@ def get_item_group(group_name):
 
 def create_bom_creator_document(bom_structure):
     """Create complete BOM Creator document with all required fields"""
-    item_code = bom_structure.get("item")
-    description = bom_structure.get("description") or item_code
-    item_group = bom_structure.get("matl")
-    operations = bom_structure.get("operation")
-    hsn_code = bom_structure.get("hsn_code")
-
-    item = get_or_create_item(item_code, description, item_group, operations, hsn_code)
+    item = get_or_create_item(bom_structure)
 
     company = get_default_company()
     bom_data = {
@@ -381,19 +378,34 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         flat_list = []
 
     for child in items:
-        it = get_or_create_item(
-            child.get("item"),
-            child.get("description"),
-            child.get("matl"),
-            child.get("operation"),
-            child.get("hsn_code"),
-        )
+        it = get_or_create_item(child)
+        operations = get_operations(child.get("operation"))
+        operations = ", ".join(operations) if operations else ""
+        qty=str(child.get("qty_per_set", 1))
+        length = float(child.get("length"))
+        width = float(child.get("width"))
+        thickness = float(child.get("thickness"))
+        bl_weight = float(child.get("bl_weight"))
+        area_sq_ft = float(child.get("area_sq_ft"))
+        length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
+        thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM" 
+        
+        
         item = {
             "doctype": "BOM Creator Item",
             "item_code": it.name,
             "item_name": it.item_name,
+            "custom_fg_name": it.item_name,
             "description": it.description,
-            "qty": str(child.get("qty_per_set", 1)),
+            "qty": qty,
+            "custom_msf": operations,
+            "custom_length": length,
+            "custom_width": width,
+            "custom_thickness": thickness,
+            "custom_blwt": bl_weight,
+            "custom_area_sqft": area_sq_ft,
+            "custom_range": length_range,
+            "custom_rangethickness": thickness_range,
             "is_expandable": 1 if child.get("children") else 0,
             "fg_item": parent_item["item"] if parent_item else None,
             "parent_row_no": None,
