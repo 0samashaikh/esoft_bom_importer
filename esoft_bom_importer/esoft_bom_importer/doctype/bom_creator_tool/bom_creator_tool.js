@@ -8,6 +8,11 @@ frappe.ui.form.on("BOM Creator Tool", {
     
     bom_creator_history(frm) {
         redirect_to_bom_history(frm)
+    },
+
+    bom_creator(frm){
+        frm.set_value("status", "")
+        
     }
 });
 
