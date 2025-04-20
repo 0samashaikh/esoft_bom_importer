@@ -2,7 +2,7 @@ from esoft_bom_importer.validator import is_migration_jobs_queued
 import frappe
 
 
-def set_progress(current, total, job, expires_in_sec=500):
+def set_progress(current, total, job, expires_in_sec=60):
     progress = (current / total) * 100
     status = "Completed" if progress >= 100 else "In Progress"
     
