@@ -217,7 +217,7 @@ def validate_mandatory_cols(df):
 
 
 def get_matl_blank_rows(df):
-    matl = df["MATL"].isna() | (df["MATL"].astype(str).str.strip() == "")
+    matl = df["ITEM GROUP"].isna() | (df["ITEM GROUP"].astype(str).str.strip() == "")
     blank_matl_rows = (df[matl].index + 2).tolist()
 
     return blank_matl_rows
