@@ -260,7 +260,7 @@ def get_bom_tree_json(df):
             "bl_weight": clean(row.get("BL.WT.")) or 0,
             "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
             "hsn_code": clean(row.get("HSN/SAC")),
-            "is_stock_item": clean(row.get("Maintain Stock")) == "Yes",
+            "is_stock_item": clean(row.get("MAINTAIN STOCK")) == "Yes",
             "children": [],
         }
 
