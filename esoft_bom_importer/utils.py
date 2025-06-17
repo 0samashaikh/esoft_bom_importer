@@ -107,7 +107,7 @@ def validate_bom_structure(
     if not final_product:
         final_product = bom_structure.get("item")
 
-    item_group = bom_structure.get("matl")
+    item_group = bom_structure.get("item_group")
     index = bom_structure.get("index")
     operations = bom_structure.get("operation")
     operations = operations.split("+")
@@ -250,6 +250,7 @@ def get_bom_tree_json(df):
             "description": clean(row.get("PART DESCRIPTION")),
             "parent_item": clean(row.get("Parent")),
             "matl": clean(row.get("MATL")),
+            "item_group": clean(row.get("ITEM GROUP")),  # Add item_group mapping
             "operation": clean(row.get("operation")),
             "den": clean(row.get("Den")),
             "qty_per_set": clean(row.get("QTY/ SET")) or "1",
@@ -259,6 +260,7 @@ def get_bom_tree_json(df):
             "bl_weight": clean(row.get("BL.WT.")) or 0,
             "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
             "hsn_code": clean(row.get("HSN/SAC")),
+            "is_stock_item": clean(row.get("Maintain Stock")) == "Yes",
             "children": [],
         }
 
@@ -293,9 +295,11 @@ def get_fg_products(bom_tree):
 def get_or_create_item(bom_structure):
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
-    item_group = bom_structure.get("matl")
+    custom_material = bom_structure.get("matl")
+    item_group = bom_structure.get("item_group")  
     hsn_code = bom_structure.get("hsn_code")
     rev = bom_structure.get("rev") or 0
+    is_stock_item = bom_structure.get("is_stock_item", False)
 
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
@@ -306,9 +310,10 @@ def get_or_create_item(bom_structure):
         "item_name": item_code,
         "description": description,
         "item_group": get_item_group(item_group),
+        "custom_material": custom_material,
         "custom_rev": rev,
         "stock_uom": "Nos",
-        "is_stock_item": 0,
+        "is_stock_item": 1 if is_stock_item else 0,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
     }
 
