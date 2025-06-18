@@ -201,6 +201,7 @@ def validate_mandatory_cols(df):
 
     blank_matl_rows = get_matl_blank_rows(df)
     blank_hsn_rows = get_hsn_blank_rows(df)
+    blank_item_group_rows = get_item_group_blank_rows(df)
 
     err = []
     if blank_matl_rows:
@@ -211,6 +212,11 @@ def validate_mandatory_cols(df):
     if blank_hsn_rows:
         err.append(
             f"<li>The following rows are missing the <b>HSN/SAC</b> value in the attached BOM Creator file:</li>\n{', '.join('Row '+str(row) for row in blank_hsn_rows)}"
+        )
+
+    if blank_item_group_rows:
+        err.append(
+            f"<li>The following rows are missing the <b>ITEM GROUP</b> value in the attached BOM Creator file:</li>\n{', '.join('Row '+str(row) for row in blank_item_group_rows)}"
         )
     if err:
         frappe.throw("<br /><br />".join(err))
@@ -229,6 +235,11 @@ def get_hsn_blank_rows(df):
 
     return blank_hsn_rows
 
+def get_item_group_blank_rows(df):
+    item_group = df["ITEM GROUP"].isna() | (df["ITEM GROUP"].astype(str).str.strip() == "")
+    blank_item_group_rows = (df[item_group].index + 2).tolist()
+
+    return blank_item_group_rows
 
 def get_bom_tree_json(df):
     """Build a hierarchical BOM structure from a DataFrame."""
@@ -296,7 +307,7 @@ def get_or_create_item(bom_structure):
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
     custom_material = bom_structure.get("matl")
-    item_group = bom_structure.get("item_group")  
+    item_group = bom_structure.get("item_group")
     hsn_code = bom_structure.get("hsn_code")
     rev = bom_structure.get("rev") or 0
     is_stock_item = bom_structure.get("is_stock_item", False)
@@ -393,9 +404,9 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         bl_weight = float(child.get("bl_weight"))
         area_sq_ft = float(child.get("area_sq_ft"))
         length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
-        thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM" 
-        
-        
+        thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM"
+
+
         item = {
             "doctype": "BOM Creator Item",
             "item_code": it.name,
