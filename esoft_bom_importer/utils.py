@@ -305,7 +305,6 @@ def get_fg_products(bom_tree):
 def get_or_create_item(bom_structure):
     item_code = bom_structure.get("item")
     description = bom_structure.get("description") or item_code
-    custom_material = bom_structure.get("matl")
     item_group = bom_structure.get("item_group")
     hsn_code = bom_structure.get("hsn_code")
     rev = bom_structure.get("rev") or 0
@@ -319,7 +318,6 @@ def get_or_create_item(bom_structure):
         "item_name": item_code,
         "description": description,
         "item_group": get_item_group(item_group),
-        "custom_material": custom_material,
         "custom_rev": rev,
         "stock_uom": "Nos",
         "is_stock_item": 1 ,
@@ -413,6 +411,7 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
             "description": it.description,
             "qty": qty,
             "custom_msf": operations,
+            "custom_material": child.get("matl"),
             "custom_length": length,
             "custom_width": width,
             "custom_thickness": thickness,
