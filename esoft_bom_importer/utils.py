@@ -271,7 +271,6 @@ def get_bom_tree_json(df):
             "bl_weight": clean(row.get("BL.WT.")) or 0,
             "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
             "hsn_code": clean(row.get("HSN/SAC")),
-            "is_stock_item": clean(row.get("MAINTAIN STOCK")) == "Yes",
             "children": [],
         }
 
@@ -310,7 +309,6 @@ def get_or_create_item(bom_structure):
     item_group = bom_structure.get("item_group")
     hsn_code = bom_structure.get("hsn_code")
     rev = bom_structure.get("rev") or 0
-    is_stock_item = bom_structure.get("is_stock_item", False)
 
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
@@ -324,7 +322,7 @@ def get_or_create_item(bom_structure):
         "custom_material": custom_material,
         "custom_rev": rev,
         "stock_uom": "Nos",
-        "is_stock_item": 1 if is_stock_item else 0,
+        "is_stock_item": 1 ,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
     }
 
