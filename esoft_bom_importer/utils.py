@@ -80,7 +80,6 @@ def validate_and_enqueue_bom_creation(bom_tree, history):
     total_length = len(bom_tree)
     history_doc = frappe.get_doc("BOM Creator Tool History", history)
     rm_groups = get_descendant_item_groups("RM")
-    print(rm_groups)
 
     for index, bom_structure in enumerate(bom_tree):
         is_last_itr = index == (total_length - 1)
@@ -117,13 +116,7 @@ def validate_bom_structure(
     hsn_code = bom_structure.get("hsn_code")
     material = bom_structure.get("matl")
     if material:
-        # valid = validate_material_group_in_rm_list(rm_groups, material)
         if not validate_material_group_in_rm_list(rm_groups, material):
-            # frappe.logger("bom_creator").info(f"not valid material: {material} in RM groups: {rm_groups}")
-            frappe.log_error(
-                f"not valid Material: '{material}' is not under the allowed RM hierarchy. "
-                f"Please ensure it belongs to the RM or its sub-groups."
-            )
             err = (
                 f"Material: '{material}' is not under the allowed RM hierarchy. "
                 f"Please ensure it belongs to the RM or its sub-groups."
