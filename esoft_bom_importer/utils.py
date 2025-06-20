@@ -5,7 +5,7 @@ from pathlib import Path
 from erpnext import get_default_company
 from frappe.utils import now
 from datetime import datetime
-
+from frappe.desk.treeview import get_all_nodes
 
 def create_bom_from_hierarchy(
     bom_structure, current_index, total_length, history, should_proceed=True
@@ -79,7 +79,8 @@ def update_bom_creator_tool_status(history, status):
 def validate_and_enqueue_bom_creation(bom_tree, history):
     total_length = len(bom_tree)
     history_doc = frappe.get_doc("BOM Creator Tool History", history)
-    rm_groups = get_descendant_item_groups("RM")
+    nodes = get_all_nodes("Item Group", "RM", "RM", "frappe.desk.treeview.get_children")
+    rm_groups =  clean_hierarchical_json(nodes, root="RM")
 
     for index, bom_structure in enumerate(bom_tree):
         is_last_itr = index == (total_length - 1)
@@ -453,32 +454,21 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
 
     return flat_list
 
-def get_descendant_item_groups(parent_group_name):
-    """
-    Return a list of all Item Group names that are descendants of parent_group_name,
-    including parent_group_name itself.
-    """
-    if not frappe.db.exists("Item Group", parent_group_name):
-        frappe.throw(f"Item Group '{parent_group_name}' does not exist.")
-    descendant = [parent_group_name]
-    queue = [parent_group_name]
-    while queue:
-        grp = queue.pop(0)
-        children = frappe.get_all(
-            "Item Group",
-            filters={"parent_item_group": grp},
-            pluck="name"
-        )
-        for child in children:
-            if child not in descendant:
-                descendant.append(child)
-                queue.append(child)
-    return descendant
-
 def validate_material_group_in_rm_list(rm_group_list, material_group):
-
     if material_group not in rm_group_list:
-
         return False
-
     return True
+
+def clean_hierarchical_json(data, root="RM"):
+    def collect_items(parent_key, data_map):
+        collected = []
+        children = data_map.get(parent_key, [])
+        for item in children:
+            collected.append(item["value"])
+            if item["expandable"]:
+                collected.extend(collect_items(item["value"], data_map))
+        return collected
+
+    data_map = {entry["parent"]: entry["data"] for entry in data}
+
+    return collect_items(root, data_map)
