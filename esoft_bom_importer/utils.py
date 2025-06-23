@@ -5,7 +5,7 @@ from pathlib import Path
 from erpnext import get_default_company
 from frappe.utils import now
 from datetime import datetime
-
+from frappe.desk.treeview import get_all_nodes
 
 def create_bom_from_hierarchy(
     bom_structure, current_index, total_length, history, should_proceed=True
@@ -79,10 +79,12 @@ def update_bom_creator_tool_status(history, status):
 def validate_and_enqueue_bom_creation(bom_tree, history):
     total_length = len(bom_tree)
     history_doc = frappe.get_doc("BOM Creator Tool History", history)
+    nodes = get_all_nodes("Item Group", "RM", "RM", "frappe.desk.treeview.get_children")
+    rm_groups =  clean_hierarchical_json(nodes, root="RM")
 
     for index, bom_structure in enumerate(bom_tree):
         is_last_itr = index == (total_length - 1)
-        should_proceed = validate_bom_structure(bom_structure, history_doc, is_last_itr)
+        should_proceed = validate_bom_structure(bom_structure, history_doc, is_last_itr, rm_groups)
         frappe.enqueue(
             method=create_bom_from_hierarchy,
             queue="long",
@@ -101,8 +103,9 @@ def validate_bom_structure(
     bom_structure,
     history_doc,
     is_last_itr,
+    rm_groups,
     final_product=None,
-    should_proceed=True,
+    should_proceed=True
 ):
     if not final_product:
         final_product = bom_structure.get("item")
@@ -112,6 +115,23 @@ def validate_bom_structure(
     operations = bom_structure.get("operation")
     operations = operations.split("+")
     hsn_code = bom_structure.get("hsn_code")
+    material = bom_structure.get("matl")
+    if material:
+        if not validate_material_group_in_rm_list(rm_groups, material):
+            err = (
+                f"Material: '{material}' is not under the allowed RM hierarchy. "
+                f"Please ensure it belongs to the RM or its sub-groups."
+            )
+            history_doc.append(
+                "error_logs",
+                {
+                    "error": err,
+                    "final_product": final_product,
+                    "row_number": int(index),
+                    "failed_while": "Validating",
+                },
+            )
+            should_proceed = False
 
     if not frappe.db.exists("Item Group", item_group):
         err = f"Item Group {item_group} does not exist in the system. Please create it before importing BOM."
@@ -160,6 +180,7 @@ def validate_bom_structure(
             bom_structure=child,
             history_doc=history_doc,
             is_last_itr=is_last_itr,
+            rm_groups=rm_groups,
             should_proceed=should_proceed,
             final_product=final_product,
         )
@@ -199,15 +220,10 @@ def clean_dataframe(dataframe):
 
 def validate_mandatory_cols(df):
 
-    blank_matl_rows = get_matl_blank_rows(df)
     blank_hsn_rows = get_hsn_blank_rows(df)
     blank_item_group_rows = get_item_group_blank_rows(df)
 
     err = []
-    if blank_matl_rows:
-        err.append(
-            f"<li>The following rows are missing the <b>MATL</b> value in the attached BOM Creator file:</li>\n{', '.join('Row '+str(row) for row in blank_matl_rows)}"
-        )
 
     if blank_hsn_rows:
         err.append(
@@ -220,13 +236,6 @@ def validate_mandatory_cols(df):
         )
     if err:
         frappe.throw("<br /><br />".join(err))
-
-
-def get_matl_blank_rows(df):
-    matl = df["MATL"].isna() | (df["MATL"].astype(str).str.strip() == "")
-    blank_matl_rows = (df[matl].index + 2).tolist()
-
-    return blank_matl_rows
 
 
 def get_hsn_blank_rows(df):
@@ -261,7 +270,7 @@ def get_bom_tree_json(df):
             "description": clean(row.get("PART DESCRIPTION")),
             "parent_item": clean(row.get("Parent")),
             "matl": clean(row.get("MATL")),
-            "item_group": clean(row.get("ITEM GROUP")),  # Add item_group mapping
+            "item_group": clean(row.get("ITEM GROUP")),
             "operation": clean(row.get("operation")),
             "den": clean(row.get("Den")),
             "qty_per_set": clean(row.get("QTY/ SET")) or "1",
@@ -394,6 +403,7 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
         qty=str(child.get("qty_per_set", 1))
+        material = child.get("matl")
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
@@ -402,16 +412,16 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
         thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM"
 
-
         item = {
             "doctype": "BOM Creator Item",
             "item_code": it.name,
             "item_name": it.item_name,
+            "item_group": it.item_group,
             "custom_fg_name": it.item_name,
             "description": it.description,
             "qty": qty,
             "custom_msf": operations,
-            "custom_material": child.get("matl"),
+            "custom_material": material,
             "custom_length": length,
             "custom_width": width,
             "custom_thickness": thickness,
@@ -443,3 +453,22 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
             get_sub_assembly(child["children"], parent_item=child, flat_list=flat_list)
 
     return flat_list
+
+def validate_material_group_in_rm_list(rm_group_list, material_group):
+    if material_group not in rm_group_list:
+        return False
+    return True
+
+def clean_hierarchical_json(data, root="RM"):
+    def collect_items(parent_key, data_map):
+        collected = []
+        children = data_map.get(parent_key, [])
+        for item in children:
+            collected.append(item["value"])
+            if item["expandable"]:
+                collected.extend(collect_items(item["value"], data_map))
+        return collected
+
+    data_map = {entry["parent"]: entry["data"] for entry in data}
+
+    return collect_items(root, data_map)
