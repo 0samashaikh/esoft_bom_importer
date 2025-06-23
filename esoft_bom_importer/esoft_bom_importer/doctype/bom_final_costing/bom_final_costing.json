@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-23 15:01:28.872657",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "bfc_description",
+  "bfc_wt",
+  "bfc_wastage_perc",
+  "bfc_wastage_wt",
+  "bfc_twt",
+  "bfc_area",
+  "bfc_mat_rate",
+  "bfc_charge_rate",
+  "bfc_total_rate",
+  "bfc_final_cost"
+ ],
+ "fields": [
+  {
+   "fieldname": "bfc_description",
+   "fieldtype": "Data",
+   "label": "Description",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_wt",
+   "fieldtype": "Float",
+   "label": "Wt",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_wastage_perc",
+   "fieldtype": "Float",
+   "label": "Wastage Percentage",
+   "precision": "2"
+  },
+  {
+   "fieldname": "bfc_wastage_wt",
+   "fieldtype": "Float",
+   "label": "Wastage Wt",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_twt",
+   "fieldtype": "Float",
+   "label": "Total Wt",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_area",
+   "fieldtype": "Data",
+   "label": "Total Area",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_mat_rate",
+   "fieldtype": "Float",
+   "label": "Material Rate",
+   "precision": "2"
+  },
+  {
+   "fieldname": "bfc_charge_rate",
+   "fieldtype": "Float",
+   "label": "Charges Rate",
+   "precision": "2"
+  },
+  {
+   "fieldname": "bfc_total_rate",
+   "fieldtype": "Float",
+   "label": "Total Rate",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bfc_final_cost",
+   "fieldtype": "Float",
+   "label": "Final Cost",
+   "precision": "2"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-23 15:06:03.940524",
+ "modified_by": "Administrator",
+ "module": "Esoft Bom Importer",
+ "name": "BOM Final Costing",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

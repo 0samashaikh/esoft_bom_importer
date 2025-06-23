@@ -1,0 +1,53 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-23 14:58:11.578457",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "powder_coating_summary_section",
+  "pcts_item_name",
+  "pcts_range_length",
+  "pcts_total_area"
+ ],
+ "fields": [
+  {
+   "fieldname": "powder_coating_summary_section",
+   "fieldtype": "Section Break",
+   "label": "Powder Coating Type Summary"
+  },
+  {
+   "fieldname": "pcts_item_name",
+   "fieldtype": "Data",
+   "label": "Powder Coating Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pcts_range_length",
+   "fieldtype": "Data",
+   "label": "Range(Length)"
+  },
+  {
+   "fieldname": "pcts_total_area",
+   "fieldtype": "Float",
+   "label": "Area",
+   "precision": "2",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-23 14:59:27.928088",
+ "modified_by": "Administrator",
+ "module": "Esoft Bom Importer",
+ "name": "BOM Powder Coating Summary",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
