@@ -366,8 +366,11 @@ def get_item_group(group_name):
 def create_bom_creator_document(bom_structure):
     """Create complete BOM Creator document with all required fields"""
     item = get_or_create_item(bom_structure)
-
     company = get_default_company()
+
+    # Get the root item's item code to pass as parent_item_code
+    root_item_code = bom_structure.get("item")
+
     bom_data = {
         "doctype": "BOM Creator",
         "item_code": item.name,
@@ -376,16 +379,19 @@ def create_bom_creator_document(bom_structure):
         "uom": "Nos",
         "company": company,
         "status": "Draft",
-        "items": get_sub_assembly(bom_structure.get("children", []), bom_structure),
+        "items": get_sub_assembly(
+            bom_structure.get("children", []),
+            parent_index=None,  # Root has no parent
+            parent_item_code=root_item_code,  # Pass the root item code
+            flat_list=None
+        ),
         "__newname": item.name,
     }
 
     bom_creator = frappe.get_doc(bom_data)
     bom_creator.insert(ignore_permissions=True)
     frappe.db.commit()
-
-
-def get_sub_assembly(items, parent_item=None, flat_list=None):
+def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
     if flat_list is None:
         flat_list = []
 
@@ -393,7 +399,8 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         it = get_or_create_item(child)
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
-        qty=str(child.get("qty_per_set", 1))
+        qty = str(child.get("qty_per_set", 1))
+        material = child.get("matl")
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
@@ -420,26 +427,21 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
             "custom_range": length_range,
             "custom_rangethickness": thickness_range,
             "is_expandable": 1 if child.get("children") else 0,
-            "fg_item": parent_item["item"] if parent_item else None,
-            "parent_row_no": None,
+            "fg_item": parent_item_code,  # Set parent item code directly
+            "parent_row_no": parent_index + 1 if parent_index is not None else None,  # Use parent index
         }
 
-        # Add to flat list
+        # Append to flat list
         flat_list.append(item)
+        current_index = len(flat_list) - 1  # Current item's index in the list
 
-        # Set parent_row_no by finding index in flat_list
-        if parent_item:
-            item["parent_row_no"] = next(
-                (
-                    i + 1
-                    for i, obj in enumerate(flat_list)
-                    if obj.get("item_code") == parent_item["item"]
-                ),
-                None,
-            )
-
-        # Recurse if there are children
+        # Recurse for children, passing current index and item code
         if child.get("children"):
-            get_sub_assembly(child["children"], parent_item=child, flat_list=flat_list)
+            get_sub_assembly(
+                child["children"],
+                parent_index=current_index,
+                parent_item_code=it.name,
+                flat_list=flat_list,
+            )
 
     return flat_list
