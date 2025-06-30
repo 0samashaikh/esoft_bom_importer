@@ -399,7 +399,11 @@ def create_bom_creator_document(bom_structure):
 
     bom_creator = frappe.get_doc(bom_data)
     bom_creator.insert(ignore_permissions=True)
+    bom_creator.set_reference_id()
+    bom_creator.set("__unsaved", 1)
+    bom_creator.save(ignore_permissions=True)
     frappe.db.commit()
+
 def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
     if flat_list is None:
         flat_list = []
@@ -421,6 +425,8 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
         item = {
             "doctype": "BOM Creator Item",
             "item_code": it.name,
+            "rate":0,
+            "amount": 0,
             "item_name": it.item_name,
             "item_group": it.item_group,
             "custom_fg_name": it.item_name,
