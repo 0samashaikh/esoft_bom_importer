@@ -398,10 +398,14 @@ def create_bom_creator_document(bom_structure):
     }
 
     bom_creator = frappe.get_doc(bom_data)
+    bom_creator.flags.skip_set_is_expandable_for_bom_creator = True
+
     bom_creator.insert(ignore_permissions=True)
     bom_creator.set_reference_id()
+
     bom_creator.set("__unsaved", 1)
     bom_creator.save(ignore_permissions=True)
+
     frappe.db.commit()
 
 def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
