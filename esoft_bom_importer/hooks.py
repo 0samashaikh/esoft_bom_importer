@@ -137,13 +137,12 @@ override_doctype_class = {
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"BOM Creator": {
+		"before_save": "esoft_bom_importer.overrides.bom_creator.before_save",
+        "before_submit": "esoft_bom_importer.overrides.bom_creator.before_submit",
+	}
+}
 
 # Scheduled Tasks
 # ---------------
