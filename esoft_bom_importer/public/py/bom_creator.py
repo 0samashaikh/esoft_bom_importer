@@ -5,7 +5,11 @@ import frappe
 class BomCreator(BOMCreator):
 
     def set_is_expandable(self):
-        if self.flags.get("skip_set_is_expandable_for_bom_creator"):
-            return
+        children_map = defaultdict(list)
 
-        super().set_is_expandable()
+        for row in self.items:
+            if row.parent_row_no:
+                children_map[frappe.cint(row.parent_row_no)].append(row)
+
+        for row in self.items:
+            row.is_expandable = 1 if children_map.get(row.idx) else 0

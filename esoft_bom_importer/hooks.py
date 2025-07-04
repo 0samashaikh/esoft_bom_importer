@@ -139,8 +139,7 @@ override_doctype_class = {
 
 doc_events = {
 	"BOM Creator": {
-		"before_save": "esoft_bom_importer.overrides.bom_creator.before_save",
-        "before_submit": "esoft_bom_importer.overrides.bom_creator.before_submit",
+		"validate": "esoft_bom_importer.overrides.bom_creator.validate",
 	}
 }
 

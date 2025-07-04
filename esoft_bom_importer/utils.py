@@ -437,15 +437,14 @@ def create_bom_creator_document(bom_structure):
         "status": "Draft",
         "items": get_sub_assembly(
             bom_structure.get("children", []),
-            parent_index=None,  # Root has no parent
-            parent_item_code=root_item_code,  # Pass the root item code
+            parent_index=None,
+            parent_item_code=root_item_code,
             flat_list=None
         ),
         "__newname": item.name,
     }
 
     bom_creator = frappe.get_doc(bom_data)
-    bom_creator.flags.skip_set_is_expandable_for_bom_creator = True
 
     bom_creator.insert(ignore_permissions=True)
     bom_creator.set_reference_id()  # Mandatory for BOM Creator Items to set fg_reference_id
