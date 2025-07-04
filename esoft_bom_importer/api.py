@@ -23,9 +23,7 @@ def validate_and_get_fg_products(file):
 def import_bom_creator(filename):
     """Start background job for BOM processing"""
     validate_migration_jobs()
-
     bom_tree = convert_spreadsheet_to_json(filename)
-    
     history = frappe.get_doc({
         "doctype": "BOM Creator Tool History",
         "job_name": "bom_creator_job",
@@ -34,9 +32,7 @@ def import_bom_creator(filename):
         "started_by": frappe.session.user,
         "file": filename,
         }).insert(ignore_permissions=True)
-    
     frappe.db.set_single_value("BOM Creator Tool", "status", "Validating")
-    
     frappe.enqueue(
         method=validate_and_enqueue_bom_creation,
         queue="long",
@@ -44,4 +40,3 @@ def import_bom_creator(filename):
         bom_tree=bom_tree,
         history=history.name
     )
-

@@ -116,6 +116,8 @@ def validate_bom_structure(
     operations = operations.split("+")
     hsn_code = bom_structure.get("hsn_code")
     material = bom_structure.get("matl")
+    uom = bom_structure.get("uom")
+
     if material:
         if not validate_material_group_in_rm_list(rm_groups, material):
             err = (
@@ -148,6 +150,19 @@ def validate_bom_structure(
 
     if not frappe.db.exists("GST HSN Code", hsn_code):
         err = f"GST HSN Code {hsn_code} does not exist in the system. Please create it before importing BOM."
+        history_doc.append(
+            "error_logs",
+            {
+                "error": err,
+                "final_product": final_product,
+                "row_number": int(index),
+                "failed_while": "Validating",
+            },
+        )
+        should_proceed = False
+
+    if not frappe.db.exists("UOM", uom):
+        err = f"UOM '{uom}' does not exist in the system. Please create it before importing BOM."
         history_doc.append(
             "error_logs",
             {
@@ -222,8 +237,18 @@ def validate_mandatory_cols(df):
 
     blank_hsn_rows = get_hsn_blank_rows(df)
     blank_item_group_rows = get_item_group_blank_rows(df)
-
+    uom_errors = get_invalid_uom_rows(df)
     err = []
+
+    if uom_errors:
+        err.append(
+            "<b>UOM Validation Failed</b><br><br>"
+            "The following rows have invalid UOM usage:<br><ul>"
+            "<li><b>Powder Item Group</b> should use UOM = <code>KG</code>.</li>"
+            "<li>If UOM = <code>Nos</code>, then quantity must be a whole number (no decimals).</li>"
+            "</ul>"
+            f"<br>Affected Rows: {', '.join('Row ' + str(row) for row in uom_errors)}"
+        )
 
     if blank_hsn_rows:
         err.append(
@@ -249,6 +274,28 @@ def get_item_group_blank_rows(df):
     blank_item_group_rows = (df[item_group].index + 2).tolist()
 
     return blank_item_group_rows
+
+def get_invalid_uom_rows(df):
+    bad_rows = []
+
+    for idx, row in df.iterrows():
+        item_group = str(row.get("ITEM GROUP", "")).strip().lower()
+        uom = str(row.get("UOM", "")).strip().lower()
+        qty = row.get("QTY/ SET", 0)
+
+        if "powder" in item_group and uom != "kg":
+            bad_rows.append(idx + 2)
+            continue
+
+        try:
+            qty = float(qty)
+            if uom == "nos" and not qty.is_integer():
+                bad_rows.append(idx + 2)
+        except (ValueError, TypeError):
+            bad_rows.append(idx + 2)
+
+    return bad_rows
+
 
 def get_bom_tree_json(df):
     """Build a hierarchical BOM structure from a DataFrame."""
@@ -280,6 +327,7 @@ def get_bom_tree_json(df):
             "bl_weight": clean(row.get("BL.WT.")) or 0,
             "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
             "hsn_code": clean(row.get("HSN/SAC")),
+            "uom": clean(row.get("UOM")) or "Nos",
             "children": [],
         }
 
@@ -317,6 +365,7 @@ def get_or_create_item(bom_structure):
     item_group = bom_structure.get("item_group")
     hsn_code = bom_structure.get("hsn_code")
     rev = bom_structure.get("rev") or 0
+    uom = bom_structure.get("uom") or "Nos"
 
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
@@ -328,7 +377,7 @@ def get_or_create_item(bom_structure):
         "description": description,
         "item_group": get_item_group(item_group),
         "custom_rev": rev,
-        "stock_uom": "Nos",
+        "stock_uom": uom,
         "is_stock_item": 1 ,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
     }
@@ -361,7 +410,6 @@ def get_operations(operations):
             )
     return operations
 
-
 def get_item_group(group_name):
     item_group = frappe.db.exists("Item Group", group_name)
     if not item_group:
@@ -375,26 +423,38 @@ def get_item_group(group_name):
 def create_bom_creator_document(bom_structure):
     """Create complete BOM Creator document with all required fields"""
     item = get_or_create_item(bom_structure)
-
     company = get_default_company()
+
+    root_item_code = bom_structure.get("item")
+
     bom_data = {
         "doctype": "BOM Creator",
         "item_code": item.name,
         "item_name": item.description,
         "qty": 1,
-        "uom": "Nos",
+        "uom": item.stock_uom,
         "company": company,
         "status": "Draft",
-        "items": get_sub_assembly(bom_structure.get("children", []), bom_structure),
+        "items": get_sub_assembly(
+            bom_structure.get("children", []),
+            parent_index=None,
+            parent_item_code=root_item_code,
+            flat_list=None
+        ),
         "__newname": item.name,
     }
 
     bom_creator = frappe.get_doc(bom_data)
+
     bom_creator.insert(ignore_permissions=True)
+    bom_creator.set_reference_id()  # Mandatory for BOM Creator Items to set fg_reference_id
+
+    bom_creator.set("__unsaved", 1)
+    bom_creator.save(ignore_permissions=True)
+
     frappe.db.commit()
 
-
-def get_sub_assembly(items, parent_item=None, flat_list=None):
+def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
     if flat_list is None:
         flat_list = []
 
@@ -411,6 +471,7 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
         area_sq_ft = float(child.get("area_sq_ft"))
         length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
         thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM"
+        uom = it.stock_uom
 
         item = {
             "doctype": "BOM Creator Item",
@@ -430,27 +491,23 @@ def get_sub_assembly(items, parent_item=None, flat_list=None):
             "custom_range": length_range,
             "custom_rangethickness": thickness_range,
             "is_expandable": 1 if child.get("children") else 0,
-            "fg_item": parent_item["item"] if parent_item else None,
-            "parent_row_no": None,
+            "uom": uom,
+            "fg_item": parent_item_code,  # Set parent item code directly
+            "parent_row_no": parent_index + 1 if parent_index is not None else None,  # Use parent index
         }
 
-        # Add to flat list
+        # Append to flat list
         flat_list.append(item)
+        current_index = len(flat_list) - 1  # Current item's index in the list
 
-        # Set parent_row_no by finding index in flat_list
-        if parent_item:
-            item["parent_row_no"] = next(
-                (
-                    i + 1
-                    for i, obj in enumerate(flat_list)
-                    if obj.get("item_code") == parent_item["item"]
-                ),
-                None,
-            )
-
-        # Recurse if there are children
+        # Recurse for children, passing current index and item code
         if child.get("children"):
-            get_sub_assembly(child["children"], parent_item=child, flat_list=flat_list)
+            get_sub_assembly(
+                child["children"],
+                parent_index=current_index,
+                parent_item_code=it.name,
+                flat_list=flat_list,
+            )
 
     return flat_list
 
