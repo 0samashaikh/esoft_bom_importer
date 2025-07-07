@@ -465,7 +465,7 @@ def summarize_item_group_summary(bom_data):
     for r in bom_data["items"]:
         grp = r["custom_material"]
 
-        if not grp or "powder" in grp.lower() or r["inclued_in_summary"] != 1:
+        if not grp or "powder" in grp.lower() or r["include_in_summary"] != 1:
             continue
 
         key = (
@@ -507,7 +507,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
         operations = ", ".join(operations) if operations else ""
         qty=str(child.get("qty_per_set", 1))
         material = child.get("matl")
-        inclued_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
+        include_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
@@ -527,7 +527,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "item_code": it.name,
             "item_name": it.item_name,
             "item_group": it.item_group,
-            "inclued_in_summary": inclued_in_summary,
+            "inclued_in_summary": include_in_summary,
             "custom_fg_name": it.item_name,
             "description": it.description,
             "qty": qty,
