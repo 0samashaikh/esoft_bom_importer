@@ -527,7 +527,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "item_code": it.name,
             "item_name": it.item_name,
             "item_group": it.item_group,
-            "include_in_summarys": include_in_summary,
+            "include_in_summary": include_in_summary,
             "custom_fg_name": it.item_name,
             "description": it.description,
             "qty": qty,
