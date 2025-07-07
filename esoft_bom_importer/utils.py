@@ -6,6 +6,7 @@ from erpnext import get_default_company
 from frappe.utils import now
 from datetime import datetime
 from frappe.desk.treeview import get_all_nodes
+from collections import defaultdict
 
 def create_bom_from_hierarchy(
     bom_structure, current_index, total_length, history, should_proceed=True
@@ -380,6 +381,9 @@ def get_or_create_item(bom_structure):
         "stock_uom": uom,
         "is_stock_item": 1 ,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
+        "custom_length": bom_structure.get("length", 0),
+        "custom_width": bom_structure.get("width", 0),
+        "custom_thickness": bom_structure.get("thickness", 0),
     }
 
     item = frappe.get_doc(item_data).insert(ignore_permissions=True)
@@ -443,7 +447,7 @@ def create_bom_creator_document(bom_structure):
         ),
         "__newname": item.name,
     }
-
+    bom_data["custom_summary"] = summarize_item_group_summary(bom_data)
     bom_creator = frappe.get_doc(bom_data)
 
     bom_creator.insert(ignore_permissions=True)
@@ -454,21 +458,66 @@ def create_bom_creator_document(bom_structure):
 
     frappe.db.commit()
 
+
+def summarize_item_group_summary(bom_data):
+    acc = defaultdict(lambda: [0.0, 0.0])
+
+    for r in bom_data["items"]:
+        grp = r["custom_material"]
+
+        if not grp or "powder" in grp.lower() or r["inclued_in_summary"] != 1:
+            continue
+
+        key = (
+            grp,
+            r["custom_rangethickness"],
+            r["custom_range"],
+        )
+        acc[key][0] += float(r.get("custom_blwt") or 0)
+        acc[key][1] += float(r.get("custom_area_sqft")   or 0)
+
+    result = []
+    for (group, range_t, range_l), (w_sum, a_sum) in acc.items():
+        result.append({
+            "ig": group,
+            "rt": range_t,
+            "rl": range_l,
+            "bw": round(w_sum, 3),
+            "ar": round(a_sum, 3),
+        })
+
+    result.sort(key=lambda r: (r["ig"], r["rt"], r["rl"]))
+
+    return result
+
+def calculate_bom_creator_item_bl_wt(l, w,t,qty,density ):
+    return round((l * w * t * qty * density) / 1000000, 3) if l and w and t and qty and density else 0.0
+
+def calculate_bom_creator_item_area_sqft(l, w, qty):
+    return round((l * w * qty * 2) / 92903.04, 3) if l and w and qty else 0.0
+
 def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
     if flat_list is None:
         flat_list = []
 
     for child in items:
         it = get_or_create_item(child)
+        density = frappe.db.get_value("Item Group", it.item_group, "custom_density", cache=True) or 0.0
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
         qty=str(child.get("qty_per_set", 1))
         material = child.get("matl")
+        inclued_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
-        bl_weight = float(child.get("bl_weight"))
-        area_sq_ft = float(child.get("area_sq_ft"))
+        bl_weight = calculate_bom_creator_item_bl_wt(
+            length, width, thickness, float(qty), density
+        )
+        area_sq_ft = calculate_bom_creator_item_area_sqft(
+            length, width, float(qty)
+        )
+
         length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
         thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM"
         uom = it.stock_uom
@@ -478,6 +527,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "item_code": it.name,
             "item_name": it.item_name,
             "item_group": it.item_group,
+            "inclued_in_summary": inclued_in_summary,
             "custom_fg_name": it.item_name,
             "description": it.description,
             "qty": qty,
