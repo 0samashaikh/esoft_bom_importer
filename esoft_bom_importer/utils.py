@@ -495,9 +495,10 @@ def summarize_item_group_summary(bom_data, powder_groups):
 
     return result
 
-def calculate_bom_creator_item_bl_wt(l, w,t,qty,density ):
+# TODO - set proper parameter names for the function
+def calculate_bom_creator_item_bl_wt(l, w, t, qty, density ):
     return round((l * w * t * qty * density) / 1000000, 3) if l and w and t and qty and density else 0.0
-
+# TODO - set proper parameter names for the function
 def calculate_bom_creator_item_area_sqft(l, w, qty):
     return round((l * w * qty * 2) / 92903.04, 3) if l and w and qty else 0.0
 
