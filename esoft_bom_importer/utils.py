@@ -339,6 +339,7 @@ def get_bom_tree_json(df):
         node_map[item_id] = node
         parent_id = node["parent_item"]
 
+        # FIX: implement this logic in below fucniton
         if parent_id and parent_id in node_map:
             node_map[parent_id]["children"].append(node)
         else:
@@ -508,6 +509,7 @@ def get_sub_assembly(items, powder_groups, parent_index=None, parent_item_code=N
 
     for child in items:
         it = get_or_create_item(child)
+        #BUG : change fetch of density to material column
         density = frappe.db.get_value("Item Group", it.item_group, "custom_density", cache=True) or 0.0
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
@@ -557,7 +559,7 @@ def get_sub_assembly(items, powder_groups, parent_index=None, parent_item_code=N
             if parent_index is not None:
                 try:
                     parent = flat_list[parent_index]
-                    item["qty"]= calculate_powder_item_qty(it, parent)
+                    item["qty"]= calculate_powder_item_qty(it, parent) or 0
 
                 except IndexError:
                     frappe.log_error(f"Bad parent_index {parent_index} for item {item['item_code']}")
@@ -580,7 +582,7 @@ def get_sub_assembly(items, powder_groups, parent_index=None, parent_item_code=N
     return flat_list
 
 def calculate_powder_item_qty(item, parent_item):
-    coverage = float(item.get("custom_coverage_area"))
+    coverage = float(item.get("custom_coverage_area") or 0)
     area = float(parent_item.get("custom_area_sqft"))
     parent_qty = float(parent_item.get("qty"))
 
