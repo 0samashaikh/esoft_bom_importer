@@ -1,3 +1,4 @@
+import json
 from esoft_bom_importer.utils import (
     convert_spreadsheet_to_json,
     get_fg_products,
@@ -32,7 +33,9 @@ def import_bom_creator(filename):
         "started_by": frappe.session.user,
         "file": filename,
         }).insert(ignore_permissions=True)
+
     frappe.db.set_single_value("BOM Creator Tool", "status", "Validating")
+
     frappe.enqueue(
         method=validate_and_enqueue_bom_creation,
         queue="long",
