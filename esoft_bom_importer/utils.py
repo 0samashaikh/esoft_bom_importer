@@ -229,56 +229,58 @@ def get_item_group_blank_rows(df):
     return blank_item_group_rows
 
 def get_bom_tree_json(df):
-    """Build a hierarchical BOM structure from a DataFrame."""
     node_map = {}
-    root_nodes = []
 
     def clean(val):
+        """Clean and convert a value to a string, handling NaN."""
         return str(val).strip() if pd.notna(val) else ""
 
     for idx, row in df.iterrows():
-        item_id = clean(row.get("Sub-Assembly")) or clean(row.get("SR NO"))
-        if not item_id:
+        sr_no = clean(row.get("SR NO"))
+        if not sr_no:
             continue
 
         node = {
             "index": idx + 2,
-            "item": item_id,
+            "item": clean(row.get("ITEM")),
             "rev": clean(row.get("REV")),
             "description": clean(row.get("PART DESCRIPTION")),
-            "parent_item": clean(row.get("Parent")),
-            "matl": clean(row.get("MATL")),
             "item_group": clean(row.get("ITEM GROUP")),
-            "operation": clean(row.get("operation")),
-            "den": clean(row.get("Den")),
+            "matl": clean(row.get("MATL")),
+            "operation": clean(row.get("OPERATION")),
             "qty_per_set": clean(row.get("QTY/ SET")) or "1",
-            "length": clean(row.get("L")) or 0,
-            "width": clean(row.get("W")) or 0,
-            "thickness": clean(row.get("T")) or 0,
-            "bl_weight": clean(row.get("BL.WT.")) or 0,
-            "area_sq_ft": clean(row.get("AREA SQ.FT.")) or 0,
-            "children": [],
+            "length": clean(row.get("LENGTH")) or 0,
+            "width": clean(row.get("WIDTH")) or 0,
+            "thickness": clean(row.get("THICKNESS")) or 0,
+            "children": []
         }
+        node_map[sr_no] = node
 
-        node_map[item_id] = node
-        parent_id = node["parent_item"]
-
-        # FIX: implement this logic in below fucniton
-        if parent_id and parent_id in node_map:
-            node_map[parent_id]["children"].append(node)
-        else:
-            root_nodes.append(node)
-
-    return root_nodes
-
-
-def add_node_to_parent(parent_item, node, node_map, root_nodes):
-    """Add node to its parent or root if parent not found"""
-    parent_node = node_map.get(parent_item)
-    if parent_node:
-        parent_node["children"].append(node)
+    map_children_to_parents(node_map)
+    root_node = node_map.get("0")
+    if root_node:
+        return [root_node]
     else:
-        root_nodes.append(node)
+        frappe.throw("No root node with Sr. No '0' found in the spreadsheet.")
+
+def get_parent_sr_no(sr_no):
+    if sr_no == "0":
+        return None
+    parts = sr_no.split(".")
+    if len(parts) == 1:
+        return "0"
+    else:
+        return ".".join(parts[:-1])
+
+def map_children_to_parents(node_map):
+    for sr_no, node in node_map.items():
+        parent_sr_no = get_parent_sr_no(sr_no)
+        if parent_sr_no and parent_sr_no not in node_map:
+            frappe.throw(f"Parent Sr. No '{parent_sr_no}' not found for item with Sr. No '{sr_no}'")
+        elif parent_sr_no:
+            parent_node = node_map[parent_sr_no]
+            node["parent_id"] = parent_node["item"]
+            parent_node["children"].append(node)
 
 
 def get_fg_products(bom_tree):
@@ -509,12 +511,11 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
 def calculate_powder_item_qty(item, parent_item):
     coverage = float(item.get("custom_coverage_area") or 0)
     area = float(parent_item.get("custom_area_sqft") or 0)
-    parent_qty = float(parent_item.get("qty") or 0)
 
-    if not coverage:
-        return 0
+    if not coverage or not area:
+        return 0.1
 
-    return (area / coverage) * parent_qty
+    return (area / coverage)
 
 def _validate_item_group(group_list, item_group):
     if item_group not in group_list:
