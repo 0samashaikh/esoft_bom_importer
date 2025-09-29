@@ -240,9 +240,10 @@ def get_bom_tree_json(df):
         if not sr_no:
             continue
 
+        item_name = clean(row.get("ITEM"))
         node = {
             "index": idx + 2,
-            "item": clean(row.get("ITEM")),
+            "item": item_name,
             "rev": clean(row.get("REV")),
             "description": clean(row.get("PART DESCRIPTION")),
             "item_group": clean(row.get("ITEM GROUP")),
@@ -439,12 +440,18 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
         it = get_or_create_item(child)
 
         #BUG : change fetch of density to material column
-        density = frappe.db.get_value("Item Group", it.item_group, "custom_density", cache=True) or 0.0
+        # density = frappe.db.get_value("Item Group", it.item_group, "custom_density", cache=True) or 0.0
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
         qty=str(child.get("qty_per_set", 1))
         material = child.get("matl")
-        include_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
+        include_in_summary, density = frappe.db.get_value(
+            "Item Group",
+            material,
+            ("custom_include_in_summary", "custom_density"),
+            cache=True
+        ) or (0, 0.0)
+        # include_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
