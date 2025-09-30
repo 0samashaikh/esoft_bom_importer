@@ -293,10 +293,16 @@ def get_fg_products(bom_tree):
 
 
 def get_or_create_item(bom_structure):
-    item_code = bom_structure.get("item")
+    item_code_base = bom_structure.get("item")
+    rev = bom_structure.get("rev")
+
+    if rev:
+        item_code = f"{item_code_base}-{rev}"
+    else:
+        item_code = item_code_base
+
     description = bom_structure.get("description") or item_code
     item_group = bom_structure.get("item_group")
-    rev = bom_structure.get("rev") or 0
     powder_groups = get_child_groups("POWDER")
 
     hsn_code =  frappe.db.get_value("Item Group",  get_item_group(item_group) , "gst_hsn_code",cache=True)
@@ -312,7 +318,7 @@ def get_or_create_item(bom_structure):
         "item_name": item_code,
         "description": description,
         "item_group": get_item_group(item_group),
-        "custom_rev": rev,
+        "custom_rev": rev or 0,
         "stock_uom": uom,
         "is_stock_item": 1 ,
         "gst_hsn_code": hsn_code,
