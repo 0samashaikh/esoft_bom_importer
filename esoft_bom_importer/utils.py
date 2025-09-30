@@ -6,13 +6,15 @@ from erpnext import get_default_company
 from frappe.utils import now
 from datetime import datetime
 from frappe.desk.treeview import get_all_nodes
+from collections import defaultdict
+
 
 def create_bom_from_hierarchy(
-    bom_structure, current_index, total_length, history, should_proceed=True
+    bom_structure, current_index, total_length, history, powder_groups, should_proceed=True
 ):
     item_code = bom_structure.get("item")
     index = bom_structure.get("index")
-    is_last_itr = current_index + 1 == total_length
+    is_last_itr = current_index + 1 == total_length,
 
     update_bom_creator_tool_status(history, "In Progress")
 
@@ -27,7 +29,7 @@ def create_bom_from_hierarchy(
                 return None
 
         try:
-            create_bom_creator_document(bom_structure)
+            create_bom_creator_document(bom_structure, powder_groups=powder_groups)
         except Exception as e:
             traceback = frappe.get_traceback()
             histoy_doc = frappe.get_doc("BOM Creator Tool History", history)
@@ -81,6 +83,7 @@ def validate_and_enqueue_bom_creation(bom_tree, history):
     history_doc = frappe.get_doc("BOM Creator Tool History", history)
     nodes = get_all_nodes("Item Group", "RM", "RM", "frappe.desk.treeview.get_children")
     rm_groups =  clean_hierarchical_json(nodes, root="RM")
+    powder_groups = clean_hierarchical_json(nodes, root="POWDER")
 
     for index, bom_structure in enumerate(bom_tree):
         is_last_itr = index == (total_length - 1)
@@ -93,6 +96,7 @@ def validate_and_enqueue_bom_creation(bom_tree, history):
             current_index=index,
             total_length=total_length,
             history=history,
+            powder_groups=powder_groups,
             should_proceed=should_proceed,
         )
 
@@ -119,7 +123,7 @@ def validate_bom_structure(
     uom = bom_structure.get("uom")
 
     if material:
-        if not validate_material_group_in_rm_list(rm_groups, material):
+        if not validate_item_group(rm_groups, material):
             err = (
                 f"Material: '{material}' is not under the allowed RM hierarchy. "
                 f"Please ensure it belongs to the RM or its sub-groups."
@@ -277,13 +281,14 @@ def get_item_group_blank_rows(df):
 
 def get_invalid_uom_rows(df):
     bad_rows = []
-
+    nodes = get_all_nodes("Item Group", "POWDER", "POWDER", "frappe.desk.treeview.get_children")
+    powder_groups = clean_hierarchical_json(nodes, root="POWDER")
     for idx, row in df.iterrows():
-        item_group = str(row.get("ITEM GROUP", "")).strip().lower()
+        item_group = str(row.get("ITEM GROUP", "")).strip()
         uom = str(row.get("UOM", "")).strip().lower()
         qty = row.get("QTY/ SET", 0)
 
-        if "powder" in item_group and uom != "kg":
+        if  validate_item_group(powder_groups, item_group) and uom != "kg":
             bad_rows.append(idx + 2)
             continue
 
@@ -334,6 +339,7 @@ def get_bom_tree_json(df):
         node_map[item_id] = node
         parent_id = node["parent_item"]
 
+        # FIX: implement this logic in below fucniton
         if parent_id and parent_id in node_map:
             node_map[parent_id]["children"].append(node)
         else:
@@ -380,6 +386,9 @@ def get_or_create_item(bom_structure):
         "stock_uom": uom,
         "is_stock_item": 1 ,
         "gst_hsn_code": get_gst_hsn_code(hsn_code),
+        "custom_length": bom_structure.get("length", 0),
+        "custom_width": bom_structure.get("width", 0),
+        "custom_thickness": bom_structure.get("thickness", 0),
     }
 
     item = frappe.get_doc(item_data).insert(ignore_permissions=True)
@@ -420,7 +429,7 @@ def get_item_group(group_name):
     return item_group
 
 
-def create_bom_creator_document(bom_structure):
+def create_bom_creator_document(bom_structure, powder_groups):
     """Create complete BOM Creator document with all required fields"""
     item = get_or_create_item(bom_structure)
     company = get_default_company()
@@ -437,13 +446,14 @@ def create_bom_creator_document(bom_structure):
         "status": "Draft",
         "items": get_sub_assembly(
             bom_structure.get("children", []),
+            powder_groups=powder_groups,
             parent_index=None,
             parent_item_code=root_item_code,
             flat_list=None
         ),
         "__newname": item.name,
     }
-
+    bom_data["custom_summary"] = summarize_item_group_summary(bom_data, powder_groups)
     bom_creator = frappe.get_doc(bom_data)
 
     bom_creator.insert(ignore_permissions=True)
@@ -454,21 +464,68 @@ def create_bom_creator_document(bom_structure):
 
     frappe.db.commit()
 
-def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=None):
+
+def summarize_item_group_summary(bom_data, powder_groups):
+    acc = defaultdict(lambda: [0.0, 0.0])
+
+    for r in bom_data["items"]:
+        grp = r["custom_material"]
+
+        if not grp or validate_item_group(powder_groups, grp) or r["include_in_summary"] != 1:
+            continue
+
+        key = (
+            grp,
+            r["custom_rangethickness"],
+            r["custom_range"],
+        )
+        acc[key][0] += float(r.get("custom_blwt") or 0)
+        acc[key][1] += float(r.get("custom_area_sqft")   or 0)
+
+    result = []
+    for (group, range_t, range_l), (w_sum, a_sum) in acc.items():
+        result.append({
+            "ig": group,
+            "rt": range_t,
+            "rl": range_l,
+            "bw": round(w_sum, 3),
+            "ar": round(a_sum, 3),
+        })
+
+    result.sort(key=lambda r: (r["ig"], r["rt"], r["rl"]))
+
+    return result
+
+# TODO - set proper parameter names for the function
+def calculate_bom_creator_item_bl_wt(l, w, t, qty, density ):
+    return round((l * w * t * qty * density) / 1000000, 3) if l and w and t and qty and density else 0.0
+# TODO - set proper parameter names for the function
+def calculate_bom_creator_item_area_sqft(l, w, qty):
+    return round((l * w * qty * 2) / 92903.04, 3) if l and w and qty else 0.0
+
+def get_sub_assembly(items, powder_groups, parent_index=None, parent_item_code=None, flat_list=None):
     if flat_list is None:
         flat_list = []
 
     for child in items:
         it = get_or_create_item(child)
+        #BUG : change fetch of density to material column
+        density = frappe.db.get_value("Item Group", it.item_group, "custom_density", cache=True) or 0.0
         operations = get_operations(child.get("operation"))
         operations = ", ".join(operations) if operations else ""
         qty=str(child.get("qty_per_set", 1))
         material = child.get("matl")
+        include_in_summary = frappe.db.get_value("Item Group", material, "custom_include_in_summary", cache=True) or 0
         length = float(child.get("length"))
         width = float(child.get("width"))
         thickness = float(child.get("thickness"))
-        bl_weight = float(child.get("bl_weight"))
-        area_sq_ft = float(child.get("area_sq_ft"))
+        bl_weight = calculate_bom_creator_item_bl_wt(
+            length, width, thickness, float(qty), density
+        )
+        area_sq_ft = calculate_bom_creator_item_area_sqft(
+            length, width, float(qty)
+        )
+
         length_range = "Above 3 Mtrs" if length > 3000 else "Till 3 Mtrs"
         thickness_range = "Above 3 MM" if thickness > 3 else "Till 3 MM"
         uom = it.stock_uom
@@ -478,6 +535,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "item_code": it.name,
             "item_name": it.item_name,
             "item_group": it.item_group,
+            "include_in_summary": include_in_summary,
             "custom_fg_name": it.item_name,
             "description": it.description,
             "qty": qty,
@@ -496,6 +554,17 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "parent_row_no": parent_index + 1 if parent_index is not None else None,  # Use parent index
         }
 
+
+        if validate_item_group(powder_groups, item["item_group"]):
+            if parent_index is not None:
+                try:
+                    parent = flat_list[parent_index]
+                    item["qty"]= calculate_powder_item_qty(it, parent) or 0
+
+                except IndexError:
+                    frappe.log_error(f"Bad parent_index {parent_index} for item {item['item_code']}")
+
+
         # Append to flat list
         flat_list.append(item)
         current_index = len(flat_list) - 1  # Current item's index in the list
@@ -504,6 +573,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
         if child.get("children"):
             get_sub_assembly(
                 child["children"],
+                powder_groups,
                 parent_index=current_index,
                 parent_item_code=it.name,
                 flat_list=flat_list,
@@ -511,8 +581,15 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
 
     return flat_list
 
-def validate_material_group_in_rm_list(rm_group_list, material_group):
-    if material_group not in rm_group_list:
+def calculate_powder_item_qty(item, parent_item):
+    coverage = float(item.get("custom_coverage_area") or 0)
+    area = float(parent_item.get("custom_area_sqft"))
+    parent_qty = float(parent_item.get("qty"))
+
+    return (area / coverage) * parent_qty
+
+def validate_item_group(group_list, item_group):
+    if item_group not in group_list:
         return False
     return True
 
