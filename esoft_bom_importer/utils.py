@@ -255,7 +255,35 @@ def get_bom_tree_json(df):
             "thickness": clean(row.get("THICKNESS")) or 0,
             "children": []
         }
+
         node_map[sr_no] = node
+        powder_item_name = clean(row.get("POWDER COATING"))
+        if powder_item_name:
+            if not frappe.db.exists("Item", powder_item_name):
+                frappe.throw(f"Powder Coating item '{powder_item_name}' does not exist in the system. Please create it before importing BOM.")
+
+            powder_sr_no = f"{sr_no}.0"
+
+            if powder_sr_no in node_map:
+                frappe.throw(f"Duplicate Sr. No '{powder_sr_no}' generated for Powder Coating item. Please check your spreadsheet data.")
+
+            powder_item = frappe.get_doc("Item", powder_item_name)
+
+            powder_node = {
+                "index": f"{idx + 2}", # Unique index for the new node
+                "item": powder_item_name,
+                "description": "Powder Coating Material",
+                "item_group": powder_item.item_group,
+                "matl": "",
+                "rev": clean(row.get("REV")),
+                "operation": "Powder Coating",
+                "qty_per_set": "1",
+                "length": clean(row.get("LENGTH")) or 0,
+                "width": clean(row.get("WIDTH")) or 0,
+                "thickness": clean(row.get("THICKNESS")) or 0,
+                "children": []
+            }
+            node_map[powder_sr_no] = powder_node
 
     map_children_to_parents(node_map)
     root_node = node_map.get("0")
@@ -276,12 +304,15 @@ def get_parent_sr_no(sr_no):
 def map_children_to_parents(node_map):
     for sr_no, node in node_map.items():
         parent_sr_no = get_parent_sr_no(sr_no)
-        if parent_sr_no and parent_sr_no not in node_map:
-            frappe.throw(f"Parent Sr. No '{parent_sr_no}' not found for item with Sr. No '{sr_no}'")
-        elif parent_sr_no:
-            parent_node = node_map[parent_sr_no]
-            node["parent_id"] = parent_node["item"]
-            parent_node["children"].append(node)
+        if parent_sr_no is None:
+            continue
+
+        parent_node = node_map.get(parent_sr_no)
+        if not parent_node:
+            frappe.throw(f"Parent Sr. No '{parent_sr_no}' not found for item '{node.get('item')}' with Sr. No '{sr_no}'")
+
+        node["parent_id"] = parent_node["item"]
+        parent_node["children"].append(node)
 
 
 def get_fg_products(bom_tree):
@@ -490,6 +521,7 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
             "custom_area_sqft": area_sq_ft,
             "custom_range": length_range,
             "custom_rangethickness": thickness_range,
+            "custom_previous_qty": qty,
             "is_expandable": 1 if child.get("children") else 0,
             "uom": uom,
             "fg_item": parent_item_code,  # Set parent item code directly
