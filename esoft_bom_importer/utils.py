@@ -241,10 +241,16 @@ def get_bom_tree_json(df):
             continue
 
         item_name = clean(row.get("ITEM"))
+        rev = clean(row.get("REV"))
+        if rev:
+            item_name = f"{item_name}_{rev}"
+        else:
+            item_name =  f"{item_name}_0"
+
         node = {
             "index": idx + 2,
             "item": item_name,
-            "rev": clean(row.get("REV")),
+            "rev": rev or 0,
             "description": clean(row.get("PART DESCRIPTION")),
             "item_group": clean(row.get("ITEM GROUP")),
             "matl": clean(row.get("MATL")),
@@ -258,6 +264,7 @@ def get_bom_tree_json(df):
 
         node_map[sr_no] = node
         powder_item_name = clean(row.get("POWDER COATING"))
+
         if powder_item_name:
             if not frappe.db.exists("Item", powder_item_name):
                 frappe.throw(f"Powder Coating item '{powder_item_name}' does not exist in the system. Please create it before importing BOM.")
@@ -324,13 +331,8 @@ def get_fg_products(bom_tree):
 
 
 def get_or_create_item(bom_structure):
-    item_code_base = bom_structure.get("item")
+    item_code = bom_structure.get("item")
     rev = bom_structure.get("rev")
-
-    if rev:
-        item_code = f"{item_code_base}-{rev}"
-    else:
-        item_code = item_code_base
 
     description = bom_structure.get("description") or item_code
     item_group = bom_structure.get("item_group")
@@ -473,6 +475,9 @@ def get_sub_assembly(items, parent_index=None, parent_item_code=None, flat_list=
         if _validate_item_group(sfi_groups, child.get("item_group")) and parent_item_code:
             original_code = child.get("item")
             child["item"] = f"{parent_item_code}-{original_code}"
+        # else:
+        #     original_code = child.get("item")
+        #     child["item"] = f"{original_code}"
 
         it = get_or_create_item(child)
 
