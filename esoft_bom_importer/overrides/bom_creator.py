@@ -2,8 +2,7 @@ import frappe
 from frappe.utils import flt
 
 def validate(self, method=None):
-    # validate_row_uoms(self)
-    pass
+    validate_row_uoms(self)
 
 def validate_row_uoms(doc):
     problematic_rows = []
