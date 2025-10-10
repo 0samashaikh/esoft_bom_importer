@@ -122,7 +122,7 @@ def validate_bom_structure(
     material = bom_structure.get("matl")
 
     if material:
-        rm_groups = get_child_groups("RM")
+        rm_groups = get_child_groups("RM", leaf_only=True)
         if not _validate_item_group(rm_groups, material):
             err = (
                 f"Material: '{material}' is not under the allowed RM hierarchy. "
@@ -572,19 +572,25 @@ def _validate_item_group(group_list, item_group):
         return False
     return True
 
-def _clean_hierarchical_json(data, root="RM"):
-    def collect_items(parent_key, data_map):
+def _clean_hierarchical_json(data, leaf_only, root="RM"):
+    def collect_items(parent_key, leaf_only, data_map):
         collected = []
         children = data_map.get(parent_key, [])
         for item in children:
-            collected.append(item["value"])
-            if item["expandable"]:
-                collected.extend(collect_items(item["value"], data_map))
+            if leaf_only:
+                if item["expandable"]:
+                    collected.extend(collect_items(item["value"], leaf_only, data_map))
+                else:
+                    collected.append(item["value"])
+            else:
+                collected.append(item["value"])
+                if item["expandable"]:
+                    collected.extend(collect_items(item["value"], leaf_only, data_map))
         return collected
 
     data_map = {entry["parent"]: entry["data"] for entry in data}
 
-    return collect_items(root, data_map)
+    return collect_items(root, leaf_only, data_map)
 
 def get_all_item_group_nodes():
 
@@ -598,14 +604,14 @@ def get_all_item_group_nodes():
 
     return nodes
 
-def get_child_groups(root_group):
+def get_child_groups(root_group, leaf_only=False):
 
     cache_key = f"bom_importer_child_groups_of_{root_group}"
     child_groups = frappe.cache().get_value(cache_key)
 
     if child_groups is None:
         all_nodes = get_all_item_group_nodes()
-        child_groups = _clean_hierarchical_json(all_nodes, root=root_group)
+        child_groups = _clean_hierarchical_json(all_nodes, leaf_only, root=root_group)
         frappe.cache().set_value(cache_key, child_groups, expires_in_sec=3600)
 
     return child_groups
