@@ -339,8 +339,8 @@ def get_or_create_item(bom_structure):
     powder_groups = get_child_groups("POWDER")
 
     hsn_code =  frappe.db.get_value("Item Group",  get_item_group(item_group) , "gst_hsn_code",cache=True)
-
-    uom = "KG" if _validate_item_group(powder_groups, bom_structure.get("item_group")) else "Nos"
+    uom =  frappe.db.get_value("Item Group",  get_item_group(item_group) , "custom_default_uom", cache=True) or "Nos"
+    # uom = "KG" if _validate_item_group(powder_groups, bom_structure.get("item_group")) else "Nos"
 
     if frappe.db.exists("Item", item_code):
         return frappe.get_doc("Item", item_code)
