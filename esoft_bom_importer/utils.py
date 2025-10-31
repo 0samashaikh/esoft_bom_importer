@@ -240,6 +240,9 @@ def get_bom_tree_json(df):
         if not sr_no:
             continue
 
+        if sr_no in node_map:
+            frappe.throw(f"Duplicate Sr. No '{sr_no}' in the spreadsheet at row {idx + 2}. Ensure 'SR NO' column is formatted as Text in Excel and read as string dtype.")
+            
         item_name = clean(row.get("ITEM"))
         rev = clean(row.get("REV"))
         if rev:
@@ -277,7 +280,7 @@ def get_bom_tree_json(df):
             powder_item = frappe.get_doc("Item", powder_item_name)
 
             powder_node = {
-                "index": f"{idx + 2}", # Unique index for the new node
+                "index": f"{idx + 2}",
                 "item": powder_item_name,
                 "description": "Powder Coating Material",
                 "item_group": powder_item.item_group,
@@ -285,9 +288,9 @@ def get_bom_tree_json(df):
                 "rev": clean(row.get("REV")),
                 "operation": "Powder Coating",
                 "qty_per_set": "1",
-                "length": clean(row.get("LENGTH")) or 0,
-                "width": clean(row.get("WIDTH")) or 0,
-                "thickness": clean(row.get("THICKNESS")) or 0,
+                "length":  0,
+                "width":   0,
+                "thickness":   0,
                 "children": []
             }
             node_map[powder_sr_no] = powder_node
