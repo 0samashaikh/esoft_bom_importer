@@ -87,6 +87,9 @@ def validate_and_enqueue_bom_creation(bom_tree, history):
     frappe.cache().delete_key("bom_importer_child_groups_of_POWDER")
     frappe.cache().delete_key("bom_importer_child_groups_of_RM")
     frappe.cache().delete_key("bom_importer_child_groups_of_SFI-CUST")
+    frappe.cache().delete_key("bom_importer_child_groups_of_BO")
+    frappe.cache().delete_key("bom_importer_child_groups_of_CO")
+    frappe.cache().delete_key("bom_importer_child_groups_of_HW")
 
     for index, bom_structure in enumerate(bom_tree):
         is_last_itr = index == (total_length - 1)
@@ -242,13 +245,15 @@ def get_bom_tree_json(df):
 
         if sr_no in node_map:
             frappe.throw(f"Duplicate Sr. No '{sr_no}' in the spreadsheet at row {idx + 2}. Ensure 'SR NO' column is formatted as Text in Excel and read as string dtype.")
-            
+
         item_name = clean(row.get("ITEM"))
         rev = clean(row.get("REV"))
-        if rev:
-            item_name = f"{item_name}_{rev}"
-        else:
-            item_name =  f"{item_name}_0"
+        bo_groups = get_child_groups("BO")
+        co_groups = get_child_groups("CO")
+        hardware_groups = get_child_groups("HW")
+
+        if not _validate_item_group(bo_groups + co_groups + hardware_groups, clean(row.get("ITEM GROUP"))):
+            item_name = f"{item_name}_{rev or 0}"
 
         node = {
             "index": idx + 2,
@@ -339,7 +344,6 @@ def get_or_create_item(bom_structure):
 
     description = bom_structure.get("description") or item_code
     item_group = bom_structure.get("item_group")
-    powder_groups = get_child_groups("POWDER")
 
     hsn_code =  frappe.db.get_value("Item Group",  get_item_group(item_group) , "gst_hsn_code",cache=True)
     uom =  frappe.db.get_value("Item Group",  get_item_group(item_group) , "custom_default_uom", cache=True) or "Nos"
