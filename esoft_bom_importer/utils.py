@@ -7,7 +7,7 @@ from frappe.utils import now
 from datetime import datetime
 from frappe.desk.treeview import get_all_nodes
 from collections import defaultdict
-
+import math
 
 def create_bom_from_hierarchy(
     bom_structure, current_index, total_length, history, should_proceed=True
@@ -572,7 +572,12 @@ def calculate_powder_item_qty(item, parent_item):
     if not coverage or not area:
         return 0.1
 
-    return (area / coverage)
+    qty = area / coverage
+
+    if 0 < qty < 0.001:
+        return 0.001
+
+    return math.ceil(qty * 1000) / 1000
 
 def _validate_item_group(group_list, item_group):
     if item_group not in group_list:
