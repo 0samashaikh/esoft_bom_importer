@@ -14,7 +14,7 @@ def create_bom_from_hierarchy(
 ):
     item_code = bom_structure.get("item")
     index = bom_structure.get("index")
-    is_last_itr = current_index + 1 == total_length,
+    is_last_itr = current_index + 1 == total_length
 
     update_bom_creator_tool_status(history, "In Progress")
 
@@ -30,6 +30,37 @@ def create_bom_from_hierarchy(
 
         try:
             create_bom_creator_document(bom_structure)
+        except frappe.exceptions.ValidationError as e:
+            traceback = frappe.get_traceback()
+            histoy_doc = frappe.get_doc("BOM Creator Tool History", history)
+            
+            # Extract just the message text if possible, otherwise use str(e)
+            error_msg = str(e)
+            if hasattr(e, 'message') and getattr(e, 'message'):
+                error_msg = str(e.message)
+                
+            histoy_doc.append(
+                "error_logs",
+                {
+                    "error": error_msg,
+                    "final_product": item_code,
+                    "row_number": int(index),
+                    "failed_while": "Running",
+                    "full_traceback": traceback,
+                },
+            )
+            histoy_doc.save()
+
+            # Push a realtime popup message directly to the user's browser!
+            frappe.publish_realtime(
+                event="msgprint",
+                message={
+                    "message": error_msg,
+                    "title": "BOM Validation Error",
+                    "indicator": "red"
+                },
+                user=histoy_doc.started_by
+            )
         except Exception as e:
             traceback = frappe.get_traceback()
             histoy_doc = frappe.get_doc("BOM Creator Tool History", history)
@@ -76,6 +107,8 @@ def update_bom_creation_tool_history(history):
 def update_bom_creator_tool_status(history, status):
     frappe.db.set_single_value("BOM Creator Tool", "status", status)
     frappe.db.set_value("BOM Creator Tool History", history, "job_status", status)
+    # Force the frontend to refresh the form so it doesn't get stuck showing 'Validating'
+    frappe.publish_realtime("doc_update", {"doctype": "BOM Creator Tool", "name": "BOM Creator Tool"})
 
 
 def validate_and_enqueue_bom_creation(bom_tree, history):
@@ -210,6 +243,7 @@ def convert_spreadsheet_to_json(file: str) -> pd.DataFrame:
 
 
 def clean_dataframe(dataframe):
+    dataframe.columns = dataframe.columns.str.strip()
     return dataframe.fillna("").map(lambda x: x.strip() if isinstance(x, str) else x)
 
 
@@ -267,6 +301,7 @@ def get_bom_tree_json(df):
             "length": clean(row.get("LENGTH")) or 0,
             "width": clean(row.get("WIDTH")) or 0,
             "thickness": clean(row.get("THICKNESS")) or 0,
+            "companies": clean(row.get("COMPANIES")),
             "children": []
         }
 
@@ -296,6 +331,7 @@ def get_bom_tree_json(df):
                 "length":  0,
                 "width":   0,
                 "thickness":   0,
+                "companies": clean(row.get("COMPANIES")),
                 "children": []
             }
             node_map[powder_sr_no] = powder_node
@@ -365,7 +401,31 @@ def get_or_create_item(bom_structure):
         "custom_length": bom_structure.get("length", 0),
         "custom_width": bom_structure.get("width", 0),
         "custom_thickness": bom_structure.get("thickness", 0),
+        "custom_companies": []
     }
+
+    valid_companies = frappe.get_all("Company", pluck="name")
+    
+    companies_str = bom_structure.get("companies")
+    if not companies_str:
+        frappe.throw(f"Please enter company/companies in the spreadsheet for this new item '{item_code}' which will be created.")
+        
+    company_names = [c.strip() for c in companies_str.split(",") if c.strip()]
+    for comp in company_names:
+        comp_lower = comp.lower()
+        if "pawane" in comp_lower:
+            matched = next((c for c in valid_companies if "pawane" in c.lower()), comp)
+        elif "chakan" in comp_lower:
+            matched = next((c for c in valid_companies if "chakan" in c.lower()), comp)
+        elif "virar" in comp_lower:
+            matched = next((c for c in valid_companies if "virar" in c.lower()), comp)
+        elif "chhaparia" in comp_lower:
+            matched = next((c for c in valid_companies if "chhaparia" in c.lower() and "unit" not in c.lower()), comp)
+        elif "abstra" in comp_lower:
+            matched = next((c for c in valid_companies if "abstra" in c.lower()), comp)
+        else:
+            matched = comp
+        item_data["custom_companies"].append({"company": matched})
 
     item = frappe.get_doc(item_data).insert(ignore_permissions=True)
     return item
@@ -398,13 +458,36 @@ def get_item_group(group_name):
 def create_bom_creator_document(bom_structure):
     """Create complete BOM Creator document with all required fields"""
     item = get_or_create_item(bom_structure)
-    company = get_default_company()
+    
+    valid_companies = frappe.get_all("Company", pluck="name")
+    
+    # First, try to get the company from the spreadsheet's root item
+    company = None
+    companies_str = bom_structure.get("companies")
+    if companies_str:
+        first_comp = [c.strip() for c in companies_str.split(",") if c.strip()][0].lower()
+        if "pawane" in first_comp:
+            company = next((c for c in valid_companies if "pawane" in c.lower()), None)
+        elif "chakan" in first_comp:
+            company = next((c for c in valid_companies if "chakan" in c.lower()), None)
+        elif "virar" in first_comp:
+            company = next((c for c in valid_companies if "virar" in c.lower()), None)
+        elif "chhaparia" in first_comp:
+            company = next((c for c in valid_companies if "chhaparia" in c.lower() and "unit" not in c.lower()), None)
+        elif "abstra" in first_comp:
+            company = next((c for c in valid_companies if "abstra" in c.lower()), None)
+
+    # If the spreadsheet didn't specify one, try the system default, then fallback to Abstra
+    if not company:
+        company = get_default_company()
+    if not company:
+        company = next((c for c in valid_companies if "abstra" in c.lower()), valid_companies[0] if valid_companies else None)
 
     root_item_code = bom_structure.get("item")
 
     bom_data = {
         "doctype": "BOM Creator",
-        "item_code": item.name,
+        "item_code": root_item_code,
         "item_name": item.description,
         "qty": 1,
         "uom": item.stock_uom,
